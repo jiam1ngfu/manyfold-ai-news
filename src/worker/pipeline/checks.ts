@@ -1,8 +1,8 @@
 /**
  * Check 1 of 3: deterministic, no AI. Every quote must appear in the cited source's
  * text, every number in the story must be found in its sources, and banned hype words
- * are refused. A story that fails is dropped; a question, chart or image that fails is
- * removed and the story is kept. Everything is recorded for the run report.
+ * are refused. A story that fails is dropped; a highlight, question, chart or image that
+ * fails is removed and the story is kept. Everything is recorded for the run report.
  */
 
 import { plainText, tokenize } from '../../shared/issue';
@@ -157,6 +157,16 @@ export function checkStory(story: DraftStory, sources: Map<string, SourceText>):
 
   if (reasons.length > 0) return { check: check(false), story: null };
 
+  // A highlight is the reader's proof, so its quote must state that very number. A mark
+  // pointing at the wrong quote loses its highlight; the number itself already passed above.
+  const summary = story.summary.replace(/<m(\d+)>(.*?)<\/m\1>/g, (whole, index: string, inner: string) => {
+    const mark = story.marks[Number(index)];
+    const proof = new Set([...numbersIn(mark.quote), ...(mark.translation ? numbersIn(mark.translation) : [])]);
+    if (numbersIn(inner).every((n) => proof.has(n))) return whole;
+    warnings.push(`Highlight ${index} ("${inner}") removed: its quote does not contain that number.`);
+    return inner;
+  });
+
   // Questions: drop any answer with an unverified citation or an unsupported number.
   const questions = story.questions.filter((q, i) => {
     const citesOk = q.cites.length > 0 && q.cites.every((c) => verified(c, texts));
@@ -194,7 +204,7 @@ export function checkStory(story: DraftStory, sources: Map<string, SourceText>):
     }
   }
 
-  return { check: check(true), story: { ...story, questions, chart, image } };
+  return { check: check(true), story: { ...story, summary, questions, chart, image } };
 }
 
 export function checkBrief(brief: DraftBrief, index: number, sources: Map<string, SourceText>): { check: ItemCheck; brief: DraftBrief | null } {

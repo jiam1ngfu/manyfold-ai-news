@@ -136,6 +136,19 @@ describe('check 1: checkStory', () => {
     expect(kept?.questions).toHaveLength(1);
   });
 
+  it('removes a highlight whose quote does not contain its number, and keeps the story', () => {
+    const swapped = story({
+      marks: [
+        { source: 0, quote: 'Running cost is about one-eighth that of comparable closed models' },
+        { source: 0, quote: 'The weights use a license that permits commercial use.' },
+      ],
+    });
+    const { check, story: kept } = checkStory(swapped, sources);
+    expect(check.kept).toBe(true);
+    expect(kept?.summary).toBe('Q3 costs <m0>one-eighth</m0> as much to run and scores within 3 points of closed models.');
+    expect(check.warnings.join(' ')).toContain('Highlight 1 ("3 points") removed');
+  });
+
   it('drops a story with an invented number', () => {
     const { check } = checkStory(story({ why: 'It could save companies 90% of their bill.' }), sources);
     expect(check.kept).toBe(false);
