@@ -6,6 +6,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { IssueResponse, IssueSummary, Lang, Quote } from '../../shared/issue';
+import { withBase } from '../../shared/base';
+import { getStoredPassword } from '../api';
 
 export class ReaderError extends Error {
   readonly status: number;
@@ -17,7 +19,7 @@ export class ReaderError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(withBase(path), {
     ...init,
     headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...(init?.headers as Record<string, string> | undefined) },
   });
@@ -38,7 +40,7 @@ export const fetchArchive = () => request<{ issues: IssueSummary[] }>('/api/issu
  */
 export const fetchDraft = (date: string) =>
   request<IssueResponse & { status: string }>(`/api/admin/issues/${encodeURIComponent(date)}`, {
-    headers: { 'x-admin-password': sessionStorage.getItem('adminPassword') ?? '' },
+    headers: { 'x-admin-password': getStoredPassword() },
   });
 
 const post = (path: string, body: unknown) => request<{ ok: true }>(path, { method: 'POST', body: JSON.stringify(body) });

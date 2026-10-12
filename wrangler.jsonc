@@ -9,6 +9,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "manyfold-ai-news",
+  // NetMind.AI, the account that owns manyfold.ai. Pinned so a token for another account
+  // fails instead of deploying a second copy there.
+  "account_id": "9af64e6d33831f8a0718d0db1ad49c06",
   "main": "./src/worker/index.ts",
   "compatibility_date": "2026-08-01",
   "observability": {
@@ -23,11 +26,18 @@
     "crons": ["30 19 * * *", "30 20 * * *", "*/15 * * * *"]
   },
   "upload_source_maps": true,
+  // The site is https://app.manyfold.ai/ai-news, next to the other Manyfold apps on that
+  // host. Paths below it are handled in src/shared/base.ts. No workers.dev copy.
+  "routes": [
+    { "pattern": "app.manyfold.ai/ai-news", "zone_name": "manyfold.ai" },
+    { "pattern": "app.manyfold.ai/ai-news/*", "zone_name": "manyfold.ai" }
+  ],
+  "workers_dev": false,
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/ai-news/api/*"]
   },
   // Readers' own questions wait here for the answer agent: an agent turn can outlast what a
   // request may keep running after it responds. Create once: npx wrangler queues create aiin5-ask
@@ -38,8 +48,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "manyfold-app-db",
-      "database_id": "8911dae0-a52a-4264-bf99-e44efdcd1fa3"
+      "database_name": "manyfold-ai-news-db",
+      "database_id": "7151c283-03a0-4ac5-a253-ca2a58a8e067"
     }
   ],
   "vars": {
@@ -47,8 +57,8 @@
     "MANYFOLD_API_BASE_URL": "https://api.manyfold.ai",
     // "production" enforces https-only and no-private-IP checks on agent URLs.
     "ENVIRONMENT": "production",
-    // The public site. Links in emails point here; change it when the custom domain is live.
-    "SITE_URL": "https://manyfold-ai-news.galichlorian.workers.dev"
+    // The public site, base path included (src/shared/base.ts). Links in emails point here.
+    "SITE_URL": "https://app.manyfold.ai/ai-news"
   }
   // Optional hardening, neither is required to deploy:
   //   npx wrangler secret put ADMIN_PASSWORD          # locks the app behind a password

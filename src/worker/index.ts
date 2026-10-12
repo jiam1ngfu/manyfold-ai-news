@@ -69,11 +69,15 @@ import { RETRY_CRON, checkSources, getRun, listRuns, retryIfFailed, reviewerAgen
 import { clientKey, confirmSubscription, isEmail, recordFeedback, recordReport, subscribe, unsubscribe } from './public';
 import { deliverDue, emailStatus, previewIssueEmail, sendConfirmation, sendTest } from './email/deliver';
 import { answererAgentId, askOverview, askQuestion, getQuestion, processQuestion, setAnswererAgent, setAskSettings, type AskMessage } from './ask/questions';
+import { BASE_PATH, stripBase } from '../shared/base';
 
 const SERVICE = 'cloudflare-worker-starter';
 const EMAIL_CRON = '*/15 * * * *';
 
 const app = new Hono<{ Bindings: Env }>();
+
+/** Where the site is when SITE_URL is not set (local dev): this host, below the base path. */
+const siteFromRequest = (url: string): string => `${new URL(url).origin}${BASE_PATH}`;
 
 /* ───────── middleware ───────── */
 
@@ -249,7 +253,7 @@ const client = (c: { env: Env; req: { header: (name: string) => string | undefin
 app.post('/api/subscribe', async (c) => {
   const pending = await subscribe(c.env, await readBody(c), await client(c));
   // Sent after the response, so the reader never waits on the mail provider.
-  if (pending) c.executionCtx.waitUntil(sendConfirmation(c.env, pending.email, pending.lang, new URL(c.req.url).origin));
+  if (pending) c.executionCtx.waitUntil(sendConfirmation(c.env, pending.email, pending.lang, siteFromRequest(c.req.url)));
   return c.json({ ok: true });
 });
 
@@ -350,7 +354,7 @@ const langParam = (value: unknown) => (value === 'zh' ? 'zh' : 'en');
 app.get('/api/admin/email/preview', async (c) => {
   const date = c.req.query('date') ?? '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'bad_request', 'date must be YYYY-MM-DD.');
-  const preview = await previewIssueEmail(c.env, date, langParam(c.req.query('lang')), new URL(c.req.url).origin);
+  const preview = await previewIssueEmail(c.env, date, langParam(c.req.query('lang')), siteFromRequest(c.req.url));
   if (!preview) throw new HttpError(404, 'not_found', 'No issue for that date.');
   return c.json(preview);
 });
@@ -379,8 +383,18 @@ app.all('/api/*', () => {
 // Anything else that reaches the Worker is a static asset (or the SPA fallback).
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 
+// The shared host sends /ai-news/api/...; routes are written without the base path.
+// Anything else (static files, pages) keeps its path for the assets binding.
+function withoutBase(request: Request): Request {
+  const url = new URL(request.url);
+  const path = stripBase(url.pathname);
+  if (path === url.pathname || !path.startsWith('/api/')) return request;
+  url.pathname = path;
+  return new Request(url, request);
+}
+
 export default {
-  fetch: app.fetch,
+  fetch: (request, env, ctx) => app.fetch(withoutBase(request), env, ctx),
   // wrangler.jsonc triggers.crons: the daily pipeline, its one retry (both drafts only),
   // and the 15-minute email tick. Each cron is its own invocation with its own limits.
   scheduled(controller, env, ctx) {

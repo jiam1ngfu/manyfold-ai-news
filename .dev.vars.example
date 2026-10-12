@@ -19,7 +19,7 @@
 # shows a preview. In production set both as secrets:
 #   npx wrangler secret put RESEND_API_KEY
 #   npx wrangler secret put EMAIL_FROM        # e.g. AI in 5 <hello@your-domain>
-# SITE_URL=http://localhost:5173
+# SITE_URL=http://localhost:5173/ai-news
 # RESEND_API_KEY=
 # EMAIL_FROM=
 # EMAIL_POSTAL_ADDRESS=
