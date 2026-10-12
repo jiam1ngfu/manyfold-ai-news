@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ConnectedAgent } from '../../shared/types';
 import { api } from '../api';
+import { withBase } from '../../shared/base';
 
 interface RunSummary {
   id: string;
@@ -333,10 +334,10 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
         {issues.map((issue) => (
           <li key={issue.date}>
             <strong>{issue.date}</strong> · #{issue.number} <span className={issue.status === 'published' ? 'badge ok' : 'badge'}>{issue.status}</span>{' '}
-            <a className="link" href={`/en/${issue.date}?preview=1`}>
+            <a className="link" href={withBase(`/en/${issue.date}?preview=1`)}>
               Preview EN
             </a>{' '}
-            <a className="link" href={`/zh/${issue.date}?preview=1`}>
+            <a className="link" href={withBase(`/zh/${issue.date}?preview=1`)}>
               中文
             </a>{' '}
             {issue.status === 'published' ? (

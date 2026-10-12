@@ -6,11 +6,13 @@
  *   /en/2026-10-12/3      one issue, opened at its third story (share links)
  *   /en/archive           past issues
  *   /en/about             how it's made, corrections
- * No router dependency: history.pushState plus a popstate listener.
+ * No router dependency: history.pushState plus a popstate listener. These paths are
+ * written without the site's base path: navigate and Link add it, useRoute strips it.
  */
 
 import { useEffect, useState } from 'react';
 import type { Lang } from '../../shared/issue';
+import { stripBase, withBase } from '../../shared/base';
 
 export type Route =
   | { name: 'root' }
@@ -72,15 +74,15 @@ export function preferredLang(): Lang {
 export const rememberLang = (lang: Lang): void => localStorage.setItem(LANG_KEY, lang);
 
 export function navigate(path: string, replace = false): void {
-  if (replace) history.replaceState(null, '', path);
-  else history.pushState(null, '', path);
+  if (replace) history.replaceState(null, '', withBase(path));
+  else history.pushState(null, '', withBase(path));
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 export function useRoute(): Route {
-  const [route, setRoute] = useState(() => parseRoute(location.pathname));
+  const [route, setRoute] = useState(() => parseRoute(stripBase(location.pathname)));
   useEffect(() => {
-    const onPop = () => setRoute(parseRoute(location.pathname));
+    const onPop = () => setRoute(parseRoute(stripBase(location.pathname)));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);

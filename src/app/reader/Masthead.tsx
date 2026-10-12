@@ -6,6 +6,7 @@
 import { useMemo, type MouseEvent, type ReactNode } from 'react';
 import type { Issue, Lang, Place, RegionKey } from '../../shared/issue';
 import { readingMinutes } from '../../shared/issue';
+import { withBase } from '../../shared/base';
 import Logo from '../components/Logo';
 import { COPY, REGION_NAMES, dateParts } from './i18n';
 import { navigate, rememberLang, withLang, type Route } from './router';
@@ -21,7 +22,7 @@ export function Link({ to, className, children, onNavigate, ...rest }: { to: str
     window.scrollTo(0, 0);
   };
   return (
-    <a href={to} className={className} onClick={onClick} {...rest}>
+    <a href={withBase(to)} className={className} onClick={onClick} {...rest}>
       {children}
     </a>
   );

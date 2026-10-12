@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Issue, IssueResponse, IssueSummary, Lang } from '../../shared/issue';
+import { withBase } from '../../shared/base';
 import { COPY, REGION_NAMES, KIND_NAMES, dateParts, sep } from './i18n';
 import StoryCard, { Logo } from './Story';
 import AskSheet from './AskSheet';
@@ -36,7 +37,7 @@ function Done({ issue, prev, lang }: { issue: Issue; prev: string | null; lang: 
   };
 
   const onShare = async () => {
-    const url = `${location.origin}/${lang}/${issue.date}`;
+    const url = `${location.origin}${withBase(`/${lang}/${issue.date}`)}`;
     const title = `AI in 5 · ${dateParts(issue.date, lang).label}`;
     try {
       if (navigator.share) await navigator.share({ title, url });

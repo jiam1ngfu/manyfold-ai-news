@@ -58,6 +58,7 @@ import { IssueValidationError } from '../shared/issue';
 import { getAnyIssue, getIssue, getLatestIssue, listAllIssues, listIssues, saveIssue, seedSampleIssue, setIssueStatus } from './issues';
 import { RETRY_CRON, checkSources, getRun, listRuns, retryIfFailed, reviewerAgentId, runPipeline, setReviewerAgent, setWriterAgent, writerAgentId } from './pipeline/run';
 import { clientKey, recordFeedback, recordReport, subscribe } from './public';
+import { stripBase } from '../shared/base';
 
 const SERVICE = 'cloudflare-worker-starter';
 
@@ -307,8 +308,18 @@ app.all('/api/*', () => {
 // Anything else that reaches the Worker is a static asset (or the SPA fallback).
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 
+// The shared host sends /ai-news/api/...; routes are written without the base path.
+// Anything else (static files, pages) keeps its path for the assets binding.
+function withoutBase(request: Request): Request {
+  const url = new URL(request.url);
+  const path = stripBase(url.pathname);
+  if (path === url.pathname || !path.startsWith('/api/')) return request;
+  url.pathname = path;
+  return new Request(url, request);
+}
+
 export default {
-  fetch: app.fetch,
+  fetch: (request, env, ctx) => app.fetch(withoutBase(request), env, ctx),
   // The daily pipeline and its one retry (wrangler.jsonc triggers.crons). Drafts only.
   scheduled(controller, env, ctx) {
     const at = new Date(controller.scheduledTime);

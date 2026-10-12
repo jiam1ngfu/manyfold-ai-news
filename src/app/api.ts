@@ -1,6 +1,8 @@
 /**
  * Fetch wrapper for the app's own API.
  *
+ * Paths are written without the site's base path; withBase adds it.
+ *
  * The admin password (when the deployment has one) lives in sessionStorage and is
  * attached to every request as x-admin-password. A 401 with admin_password_invalid
  * notifies the App so it can raise the password gate — components never handle
@@ -8,8 +10,10 @@
  */
 
 import type { ApiErrorBody } from '../shared/types';
+import { withBase } from '../shared/base';
 
-const PASSWORD_KEY = 'adminPassword';
+// Namespaced: other apps share this origin (app.manyfold.ai) and its sessionStorage.
+const PASSWORD_KEY = 'aiin5.adminPassword';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -41,7 +45,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(withBase(path), {
     ...init,
     headers: {
       ...(init.body ? { 'content-type': 'application/json' } : {}),

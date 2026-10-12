@@ -6,8 +6,10 @@
 
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
+import { stripBase } from '../shared/base';
 
-const isAdmin = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
+const path = stripBase(location.pathname);
+const isAdmin = path === '/admin' || path.startsWith('/admin/');
 // One import() per lazy(): Vite attaches each chunk's stylesheet to its own import()
 // call, and a ternary inside one call would load the reader's CSS for /admin too.
 const Root = isAdmin ? lazy(() => import('./App')) : lazy(() => import('./reader/ReaderApp'));
