@@ -56,6 +56,15 @@ export function subscribe(email: string, lang: Lang, source: 'done' | 'gate') {
   });
 }
 
+const markSubscribed = (value: boolean) => {
+  if (value) localStorage.setItem(SUBSCRIBED_KEY, '1');
+  else localStorage.removeItem(SUBSCRIBED_KEY);
+  window.dispatchEvent(new Event('aiin5:subscribed'));
+};
+
+export const confirmSubscription = (token: string) => post('/api/subscribe/confirm', { token }).then(() => markSubscribed(true));
+export const unsubscribe = (token: string) => post('/api/unsubscribe', { token }).then(() => markSubscribed(false));
+
 /** Has this browser subscribed? Shared across the done section and the ask sheet. */
 export function useSubscribed(): boolean {
   const read = useCallback(() => localStorage.getItem(SUBSCRIBED_KEY) === '1', []);

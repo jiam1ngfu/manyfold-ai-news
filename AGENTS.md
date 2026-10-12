@@ -44,8 +44,13 @@ The template is designed to be extended and reshaped; these are the load-bearing
    `/api/state` and the reader routes without a reason as good as theirs. The reader routes
    are the public site itself (`isReaderRoute` in `src/worker/index.ts`): `GET /api/issues*`
    serves published issues only (read-only, cacheable, no agent calls, no credentials), and
-   `POST /api/subscribe`, `/api/feedback` and `/api/reports` validate strictly and are
-   throttled per salted IP hash. A reader route must never call an agent or touch a secret.
+   `POST /api/subscribe`, `/api/subscribe/confirm`, `/api/unsubscribe`, `/api/feedback` and
+   `/api/reports` validate strictly and are throttled per salted IP hash. A reader route must
+   never call an agent or touch a secret, with one exception: `/api/subscribe` uses the mail
+   provider key to send a rate-limited confirmation to the address just submitted.
+   `/api/unsubscribe` is also the only mutation exempt from the same-origin check, because
+   mail providers send the one-click List-Unsubscribe POST from their own servers; it acts
+   only on the signed token in its URL.
 8. **Keep the reader honest.** Only `status = 'published'` issues reach readers, and every
    issue passes `validateIssue` (`src/shared/issue.ts`) before it is stored. The fictional
    sample issue is seeded into the local database under `npm run dev` only, never in a
@@ -66,6 +71,14 @@ The template is designed to be extended and reshaped; these are the load-bearing
     closed (an item without a verdict is cut) and run check 1 again over every fix.
     `GET /api/admin/pipeline/sources` reads feeds and sources without calling an agent;
     keep it free.
+11. **Email is opt-in, and leaving is one click.** Only `confirmed` subscribers (double
+    opt-in) get the issue, and only a published one (`src/worker/email/`). Every issue email
+    carries a working unsubscribe link and the one-click `List-Unsubscribe` headers, and
+    unsubscribing never needs a login or a confirmation email. Links are signed with
+    `link_signing_key` in `settings`; never rotate or delete it, or the unsubscribe links in
+    every email already sent stop working. Subscriber addresses are personal data: never
+    log them and never return them from an API, admin routes included (counts only). A
+    recipient is claimed in `email_log` before each send so nobody gets a second copy.
 
 ## Checks
 

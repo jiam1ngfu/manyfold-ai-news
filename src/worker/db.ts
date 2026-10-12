@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE INDEX IF NOT EXISTS idx_issues_status_date ON issues (status, date);
 
 -- Email subscribers. Personal data: never logged, never returned by the API.
--- status stays 'pending' until confirmation mail exists.
+-- status: pending (until the confirmation link is clicked), confirmed or unsubscribed.
 CREATE TABLE IF NOT EXISTS subscribers (
   email      TEXT PRIMARY KEY,
   lang       TEXT NOT NULL,
@@ -160,6 +160,24 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_date ON pipeline_runs (issue_date, started_at);
+
+-- Every email we send or try to send. Personal data, like subscribers.
+-- kind: issue (ref = issue date), confirm or test (ref = send time).
+-- status: sending, sent, failed or skipped. The primary key is what stops a second copy
+-- of the same issue: a recipient is claimed with INSERT OR IGNORE before sending.
+CREATE TABLE IF NOT EXISTS email_log (
+  email      TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  ref        TEXT NOT NULL,
+  status     TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 1,
+  error      TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (email, kind, ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_log_ref ON email_log (kind, ref, status);
 `;
 
 /**

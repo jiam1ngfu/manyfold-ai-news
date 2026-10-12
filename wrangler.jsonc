@@ -17,8 +17,10 @@
   // Daily pipeline: 19:30 UTC, so the issue is ready before the first readers' 7:00, and
   // 20:30 UTC, which runs again only if the day's run failed (src/worker/pipeline/run.ts).
   // It only saves drafts; nothing is published without the owner (see /admin, Issues).
+  // Every 15 minutes: email the published issue to subscribers whose local time is
+  // 07:00 to 12:00 (src/worker/email/deliver.ts). Each cron runs as its own invocation.
   "triggers": {
-    "crons": ["30 19 * * *", "30 20 * * *"]
+    "crons": ["30 19 * * *", "30 20 * * *", "*/15 * * * *"]
   },
   "upload_source_maps": true,
   "assets": {
@@ -38,9 +40,14 @@
     // Manyfold API base. Point at https://api-staging.manyfold.ai via .dev.vars for local dev.
     "MANYFOLD_API_BASE_URL": "https://api.manyfold.ai",
     // "production" enforces https-only and no-private-IP checks on agent URLs.
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    // The public site. Links in emails point here; change it when the custom domain is live.
+    "SITE_URL": "https://manyfold-ai-news.galichlorian.workers.dev"
   }
   // Optional hardening, neither is required to deploy:
   //   npx wrangler secret put ADMIN_PASSWORD          # locks the app behind a password
   //   npx wrangler secret put CONFIG_ENCRYPTION_KEY   # >=32 chars; otherwise a key is generated and stored in D1
+  // Email (optional; without both, emails are logged in /admin but not sent):
+  //   npx wrangler secret put RESEND_API_KEY
+  //   npx wrangler secret put EMAIL_FROM              # e.g. AI in 5 <hello@your-domain>
 }

@@ -17,7 +17,9 @@
  *   GET    /api/issues/latest?before=DATE   open   newest published issue on or before DATE
  *   GET    /api/issues                      open   published issues, newest first (archive)
  *   GET    /api/issues/:date                open   one published issue
- *   POST   /api/subscribe                   open   join the email list (throttled)
+ *   POST   /api/subscribe                   open   join the email list; sends the confirmation (throttled)
+ *   POST   /api/subscribe/confirm           open   the confirmation link (signed token)
+ *   POST   /api/unsubscribe                 open   the unsubscribe link and one-click header (signed token)
  *   POST   /api/feedback                    open   "was this issue useful" (throttled)
  *   POST   /api/reports                     open   "report a problem" (throttled)
  *   GET    /api/admin/issues                admin  every issue, drafts included
@@ -29,6 +31,9 @@
  *   GET    /api/admin/pipeline/sources      admin  read feeds and a few sources (no agent, free)
  *   GET    /api/admin/pipeline/runs/:id     admin  one run report
  *   POST   /api/admin/pipeline/run          admin  run the pipeline now (billed; needs confirm)
+ *   GET    /api/admin/email                 admin  provider, subscriber counts, deliveries (no addresses)
+ *   GET    /api/admin/email/preview         admin  an issue rendered as the email
+ *   POST   /api/admin/email/test            admin  send one issue email to one address
  *
  * The scheduled handler runs the pipeline daily at 19:30 UTC, and again at 20:30 UTC only if
  * that run failed; it only saves drafts.
@@ -57,9 +62,11 @@ import { getConversation, handleChatTurn, resetConversation } from './chat';
 import { IssueValidationError } from '../shared/issue';
 import { getAnyIssue, getIssue, getLatestIssue, listAllIssues, listIssues, saveIssue, seedSampleIssue, setIssueStatus } from './issues';
 import { RETRY_CRON, checkSources, getRun, listRuns, retryIfFailed, reviewerAgentId, runPipeline, setReviewerAgent, setWriterAgent, writerAgentId } from './pipeline/run';
-import { clientKey, recordFeedback, recordReport, subscribe } from './public';
+import { clientKey, confirmSubscription, isEmail, recordFeedback, recordReport, subscribe, unsubscribe } from './public';
+import { deliverDue, emailStatus, previewIssueEmail, sendConfirmation, sendTest } from './email/deliver';
 
 const SERVICE = 'cloudflare-worker-starter';
+const EMAIL_CRON = '*/15 * * * *';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -71,9 +78,11 @@ app.use('/api/*', async (c, next) => {
 });
 
 // Same-origin check on every mutation: browsers always send Origin on cross-site
-// POSTs, so this shuts down CSRF without cookies or tokens.
+// POSTs, so this shuts down CSRF without cookies or tokens. One exception: mail
+// providers send the one-click List-Unsubscribe POST from their own servers, without
+// an Origin. That route acts only on the signed token in its URL.
 app.use('/api/*', async (c, next) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)) {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method) && new URL(c.req.url).pathname !== '/api/unsubscribe') {
     const origin = c.req.header('origin');
     if (!origin) {
       throw new HttpError(403, 'origin_required', 'Mutation requests must include a same-origin Origin header.');
@@ -97,11 +106,12 @@ const adminHeaderOk = (c: { env: Env; req: { header: (name: string) => string | 
 };
 
 // The reader's routes are the site itself, so they stay open: reading published issues
-// (read-only, cacheable, no agent calls, no credentials) and three throttled,
-// strictly validated writes. None of them touches agents or secrets.
+// (read-only, cacheable, no agent calls, no credentials) and throttled, strictly
+// validated writes. None of them touches an agent. The only secret any of them uses is
+// the mail provider key, to send a confirmation to the address just submitted.
+const READER_POSTS = new Set(['/api/subscribe', '/api/subscribe/confirm', '/api/unsubscribe', '/api/feedback', '/api/reports']);
 const isReaderRoute = (method: string, path: string): boolean =>
-  (method === 'GET' && (path === '/api/issues' || path.startsWith('/api/issues/'))) ||
-  (method === 'POST' && (path === '/api/subscribe' || path === '/api/feedback' || path === '/api/reports'));
+  (method === 'GET' && (path === '/api/issues' || path.startsWith('/api/issues/'))) || (method === 'POST' && READER_POSTS.has(path));
 
 // Everything else except /api/health and /api/state needs the password (when one is set).
 app.use('/api/*', async (c, next) => {
@@ -230,7 +240,19 @@ const client = (c: { env: Env; req: { header: (name: string) => string | undefin
   clientKey(c.env, c.req.header('cf-connecting-ip'));
 
 app.post('/api/subscribe', async (c) => {
-  await subscribe(c.env, await readBody(c), await client(c));
+  const pending = await subscribe(c.env, await readBody(c), await client(c));
+  // Sent after the response, so the reader never waits on the mail provider.
+  if (pending) c.executionCtx.waitUntil(sendConfirmation(c.env, pending.email, pending.lang, new URL(c.req.url).origin));
+  return c.json({ ok: true });
+});
+
+app.post('/api/subscribe/confirm', async (c) => c.json({ ok: true, ...(await confirmSubscription(c.env, await readBody(c), await client(c))) }));
+
+// Both the page's button (JSON body) and the mail provider's one-click POST (form body,
+// token in the URL) land here.
+app.post('/api/unsubscribe', async (c) => {
+  const body = c.req.header('content-type')?.includes('application/json') ? await readBody(c) : null;
+  await unsubscribe(c.env, body, c.req.query('t') ?? null, await client(c));
   return c.json({ ok: true });
 });
 
@@ -300,6 +322,28 @@ app.post('/api/admin/pipeline/run', async (c) => {
   return c.json(await runPipeline(c.env, { trigger: 'manual', issueDate }));
 });
 
+/* ───────── admin: email ───────── */
+
+app.get('/api/admin/email', async (c) => c.json(await emailStatus(c.env)));
+
+const langParam = (value: unknown) => (value === 'zh' ? 'zh' : 'en');
+
+app.get('/api/admin/email/preview', async (c) => {
+  const date = c.req.query('date') ?? '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'bad_request', 'date must be YYYY-MM-DD.');
+  const preview = await previewIssueEmail(c.env, date, langParam(c.req.query('lang')), new URL(c.req.url).origin);
+  if (!preview) throw new HttpError(404, 'not_found', 'No issue for that date.');
+  return c.json(preview);
+});
+
+app.post('/api/admin/email/test', async (c) => {
+  const body = await readBody(c);
+  const date = typeof body?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : '';
+  const to = typeof body?.to === 'string' ? body.to.trim().toLowerCase() : '';
+  if (!date || !isEmail(to)) throw new HttpError(400, 'bad_request', 'Send a date and a valid address.');
+  return c.json(await sendTest(c.env, date, langParam(body?.lang), to));
+});
+
 app.all('/api/*', () => {
   throw new HttpError(404, 'not_found', 'No such API route.');
 });
@@ -309,9 +353,15 @@ app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default {
   fetch: app.fetch,
-  // The daily pipeline and its one retry (wrangler.jsonc triggers.crons). Drafts only.
+  // wrangler.jsonc triggers.crons: the daily pipeline, its one retry (both drafts only),
+  // and the 15-minute email tick. Each cron is its own invocation with its own limits.
   scheduled(controller, env, ctx) {
     const at = new Date(controller.scheduledTime);
-    ctx.waitUntil(controller.cron === RETRY_CRON ? retryIfFailed(env, at) : runPipeline(env, { trigger: 'cron', at }));
+    if (controller.cron === EMAIL_CRON) {
+      // Counts only: addresses never reach the logs.
+      ctx.waitUntil(ensureSchema(env.DB).then(() => deliverDue(env, at)).then((tick) => tick.due > 0 && console.log('email tick', JSON.stringify(tick))));
+    }
+    else if (controller.cron === RETRY_CRON) ctx.waitUntil(retryIfFailed(env, at));
+    else ctx.waitUntil(runPipeline(env, { trigger: 'cron', at }));
   },
 } satisfies ExportedHandler<Env>;

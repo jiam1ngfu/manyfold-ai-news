@@ -65,6 +65,17 @@ type Copy = {
   subFine: string;
   subDone: string;
   subFailed: string;
+  confirmWorking: string;
+  confirmedTitle: string;
+  confirmedText: string;
+  linkFailedTitle: string;
+  confirmFailedText: string;
+  unsubTitle: string;
+  unsubText: string;
+  unsubButton: string;
+  unsubDoneTitle: string;
+  unsubDoneText: string;
+  unsubFailedText: string;
   share: string;
   shared: string;
   previous: string;
@@ -123,8 +134,19 @@ export const COPY: Record<Lang, Copy> = {
     subLabel: 'Get it in your inbox every morning',
     subButton: 'Subscribe',
     subFine: 'One email a day. Unsubscribe in one click.',
-    subDone: 'You’re on the list. The first email will ask you to confirm.',
+    subDone: 'Almost done: check your inbox and click the link to confirm.',
     subFailed: 'That didn’t work. Check the address and try again.',
+    confirmWorking: 'Confirming your subscription…',
+    confirmedTitle: 'You’re subscribed',
+    confirmedText: 'The next issue arrives at 7:00, your local time. Every email has a one-click unsubscribe link.',
+    linkFailedTitle: 'This link didn’t work',
+    confirmFailedText: 'It may have expired. Subscribe again and we’ll send a fresh link.',
+    unsubTitle: 'Unsubscribe from AI in 5?',
+    unsubText: 'You won’t get the daily email any more. The site stays open to read.',
+    unsubButton: 'Unsubscribe',
+    unsubDoneTitle: 'You’re unsubscribed',
+    unsubDoneText: 'You won’t hear from us again. If you change your mind, subscribe on any issue.',
+    unsubFailedText: 'Reply to any of our emails and we’ll take you off the list by hand.',
     share: 'Share this issue',
     shared: 'Link copied',
     previous: 'Read the previous issue',
@@ -213,8 +235,19 @@ export const COPY: Record<Lang, Copy> = {
     subLabel: '每天早上送到你的邮箱',
     subButton: '订阅',
     subFine: '每天只有 1 封，随时一键退订。',
-    subDone: '已加入订阅名单。第一封邮件会请你确认。',
+    subDone: '还差一步：请到邮箱里点确认链接。',
     subFailed: '没有成功，请检查邮箱地址后重试。',
+    confirmWorking: '正在确认订阅…',
+    confirmedTitle: '订阅成功',
+    confirmedText: '下一期会在你当地时间早上 7 点送到。每封邮件底部都能一键退订。',
+    linkFailedTitle: '这个链接无效',
+    confirmFailedText: '链接可能已经过期。重新订阅一次，我们会再发一封确认邮件。',
+    unsubTitle: '退订 AI in 5？',
+    unsubText: '退订后不再收到每日邮件，网站照常可以看。',
+    unsubButton: '确认退订',
+    unsubDoneTitle: '已退订',
+    unsubDoneText: '我们不会再给你发邮件。想回来的话，在任何一期页面上重新订阅就行。',
+    unsubFailedText: '回复我们任意一封邮件，我们会手动帮你退订。',
     share: '分享这期',
     shared: '链接已复制',
     previous: '看上一期',
