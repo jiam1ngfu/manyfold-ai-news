@@ -9,6 +9,7 @@ import type { Candidate } from './feeds';
 import type { Snapshot } from './snapshot';
 import type { SourceText } from './checks';
 import type { Draft } from './draft';
+import { ORGS } from './orgs';
 
 const json = (value: unknown) => JSON.stringify(value);
 
@@ -33,7 +34,7 @@ Rules:
 - Cover both the US and China (and Europe or elsewhere when it matters). Do not force a quota.
 - One item per event. If several candidates report the same event, list all their ids in one item. When an official candidate (kind "official") covers the event, always include it, first.
 - Prefer official announcements and first-hand sources. A rumor (unconfirmed report) can only be a brief.
-- When an important event has no official candidate, you may open the company's own newsroom or blog to find the official announcement and add its exact URL in "extraUrls" (up to 2 per item). Only add pages you have opened and confirmed cover the same event. Never guess a URL: every one is fetched and checked, and a wrong one wastes the slot.
+- Every story should rest on its primary source: the company's own announcement or blog post, the paper, or the official document (a regulator's notice, a filing). When no official candidate covers a story, find that source (reports usually link to it; otherwise check the company's newsroom or blog) and add its exact URL in "extraUrls" (up to 2 per item). Only add first-hand pages you have opened and confirmed cover the same event: never a news site, an aggregator or a social media post. Never guess a URL: every one is fetched and checked, and a wrong one wastes the slot.
 - Do not pick an event that is already in "Covered in the last 7 days" below, even from a different outlet, unless there is a significant new development; then the item is about that development.
 
 Reply with JSON only, no prose:
@@ -97,7 +98,8 @@ Visuals (optional):
 - "chart" only when two comparable numbers or a change are in the sources: {"type":"compare"|"change","title","note"?,"axis"?:["Decrease","Increase"],"rows":[{"label","value","shown","mark"?,"focus"?}]}. "compare" values are non-negative; "change" values are signed percentages. "shown" is how the number is written, and "mark" links the row to a mark when it is one. If the figure is a company's own estimate, say so in "note".
 - "image": {"source": index, "alt": "what the image shows"} only when that source is official and hasImage is true.
 
-Also give each story: "id" (short kebab-case), "region" (us, cn, eu, jp or other, by where the main company or institution is), "org" (the main company or null), "lon"/"lat" of its home city, "category" (Models, Products, Companies, Funding, Research, Open Source, Policy or Hardware), and exactly one story with "top": true (the most important).
+Also give each story: "id" (short kebab-case), "region" (us, cn, eu, jp or other, by where the main company or institution is), "org" (the main company or null; see below), "lon"/"lat" of its home city, "category" (Models, Products, Companies, Funding, Research, Open Source, Policy or Hardware), and exactly one story with "top": true (the most important).
+"org" in stories and briefs is the company the item is about, or null when it is not about one company. When it is one of these, write the name exactly as listed, since it picks the logo: ${ORGS.map((o) => o.name).join(', ')}.
 Briefs are one sentence of at most 25 words each.
 "today" is three sentences of at most 15 words, one per most important story, each pointing at a story id.
 

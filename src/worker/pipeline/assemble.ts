@@ -9,6 +9,7 @@ import type { Brief, ChartRow, Issue, L10n, Place, Quote, RegionKey, Source, Sto
 import { tokenize } from '../../shared/issue';
 import { repairMarkers, type Draft, type DraftQuote, type DraftStory } from './draft';
 import { extraQuantities } from './checks';
+import { findOrg } from './orgs';
 
 const CATEGORY_ZH: Record<string, string> = {
   Models: '模型',
@@ -118,6 +119,7 @@ export function assembleIssue(options: {
 
   const stories: Story[] = draft.stories.map((s: DraftStory, i): Story => {
     const k = `s${i}`;
+    const org = findOrg(s.org);
     const sources: Source[] = s.sources.map((src, j) => ({
       kind: src.kind,
       name: { en: src.name, zh: sourceNamesZh.get(src.url) ?? zh[`${k}.src${j}`] ?? src.name },
@@ -151,7 +153,7 @@ export function assembleIssue(options: {
       const src = s.sources[s.image.source];
       const image = src ? images.get(src.url) : undefined;
       if (image) {
-        const who = s.org ?? src.name;
+        const who = org?.name ?? s.org ?? src.name;
         visual = { type: 'image', src: image, alt: both(`${k}.image.alt`, s.image.alt), credit: { en: `Image: ${who}, from its announcement`, zh: `图片：${who}，取自官方公告` } };
       }
     }
@@ -159,6 +161,7 @@ export function assembleIssue(options: {
       id: s.id,
       region: s.region,
       ...(s.top ? { top: true } : {}),
+      ...(org ? { org } : {}),
       place: place(s.region, s.lon, s.lat),
       cat: { en: s.category, zh: CATEGORY_ZH[s.category] ?? s.category },
       title: both(`${k}.title`, s.title),
@@ -178,13 +181,18 @@ export function assembleIssue(options: {
     };
   });
 
-  const briefs: Brief[] = draft.briefs.map((b, i) => ({
-    region: b.region,
-    kind: b.kind,
-    place: place(b.region, b.lon, b.lat),
-    src: { en: b.sourceName, zh: sourceNamesZh.get(b.url) ?? zh[`b${i}.src`] ?? b.sourceName },
-    text: both(`b${i}.text`, b.text),
-  }));
+  const briefs: Brief[] = draft.briefs.map((b, i) => {
+    // A rumor never carries a company logo: it would read as an official statement.
+    const org = b.kind === 'rumor' ? undefined : findOrg(b.org);
+    return {
+      region: b.region,
+      kind: b.kind,
+      ...(org ? { org } : {}),
+      place: place(b.region, b.lon, b.lat),
+      src: { en: b.sourceName, zh: sourceNamesZh.get(b.url) ?? zh[`b${i}.src`] ?? b.sourceName },
+      text: both(`b${i}.text`, b.text),
+    };
+  });
 
   const today = draft.today.map((t, i) => ({ id: t.story, text: both(`today.${i}`, t.text) }));
   return { issue: { date: options.date, number: options.number, today, stories, briefs }, warnings };

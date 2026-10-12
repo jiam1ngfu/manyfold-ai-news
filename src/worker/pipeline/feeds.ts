@@ -67,6 +67,31 @@ export interface Candidate extends FeedItem {
 /** Hosts whose share images are never news pictures (see FeedSource.images). */
 export const NO_IMAGE_HOSTS = new Set(FEEDS.filter((f) => f.images === false).map((f) => new URL(f.url).hostname));
 
+export const hostIs = (host: string, domain: string): boolean => host === domain || host.endsWith(`.${domain}`);
+
+/**
+ * News outlets. A page the picker adds from one of them is a report, never an official
+ * source, so its pictures are never shown. The feeds' own outlets are included.
+ */
+const MEDIA_DOMAINS = [
+  ...FEEDS.filter((f) => f.kind !== 'official').map((f) => new URL(f.url).hostname.replace(/^www\./, '')),
+  'reuters.com', 'bloomberg.com', 'cnbc.com', 'ft.com', 'wsj.com', 'nytimes.com', 'washingtonpost.com', 'theinformation.com',
+  'wired.com', 'venturebeat.com', 'axios.com', 'businessinsider.com', 'theguardian.com', 'bbc.com', 'bbc.co.uk', 'apnews.com',
+  'forbes.com', 'fortune.com', 'zdnet.com', 'engadget.com', 'semafor.com', 'techmeme.com', 'theregister.com', 'tomshardware.com',
+  'siliconangle.com', 'nikkei.com', 'medium.com', 'substack.com',
+  '36kr.com', 'jiqizhixin.com', 'huxiu.com', 'sina.com.cn', 'sina.cn', 'yicai.com', 'caixin.com', 'thepaper.cn', 'jiemian.com',
+  'ifeng.com', '163.com', 'sohu.com', 'news.qq.com', 'new.qq.com', 'cls.cn', 'stcn.com', 'leiphone.com', 'geekpark.net',
+];
+
+export function isMediaUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return MEDIA_DOMAINS.some((d) => hostIs(host, d));
+  } catch {
+    return false;
+  }
+}
+
 /* ───────── parsing ───────── */
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
