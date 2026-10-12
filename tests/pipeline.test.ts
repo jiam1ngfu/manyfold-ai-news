@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { NO_IMAGE_HOSTS, parseFeed, parseNewsroom } from '../src/worker/pipeline/feeds';
+import { NO_IMAGE_HOSTS, parseFeed, parseNewsroom, type Candidate } from '../src/worker/pipeline/feeds';
 import { looksLikeDefaultImage } from '../src/worker/pipeline/snapshot';
-import { canonical, checkDraft, checkStory, extraQuantities, numbersIn, quantities, quoteFound } from '../src/worker/pipeline/checks';
-import { extractJson, readDraft, repairMarkers, type DraftStory } from '../src/worker/pipeline/draft';
+import { canonical, checkDraft, checkStory, extraQuantities, numbersIn, pinOfficial, quantities, quoteFound } from '../src/worker/pipeline/checks';
+import { extractJson, readDraft, repairMarkers, type Draft, type DraftStory } from '../src/worker/pipeline/draft';
 import { assembleIssue, checkTranslation, sourceLine, translationEntries } from '../src/worker/pipeline/assemble';
-import { issueDateFor, windowFor } from '../src/worker/pipeline/run';
+import { extraSource, issueDateFor, itemUrls, windowFor } from '../src/worker/pipeline/run';
 import { applyReview, readReview } from '../src/worker/pipeline/review';
-import { reviewPrompt, selectPrompt } from '../src/worker/pipeline/prompts';
-import { validateIssue } from '../src/shared/issue';
+import { reviewPrompt, selectPrompt, writePrompt } from '../src/worker/pipeline/prompts';
+import { ORGS, findOrg, orgKey } from '../src/worker/pipeline/orgs';
+import { LOGOS } from '../src/worker/pipeline/logo-data';
+import { validateIssue, type SourceKind } from '../src/shared/issue';
 
 const SOURCE_EN =
   'Today we are releasing Q3. Running cost is about one-eighth that of comparable closed models, and the full model needs eight 80GB GPUs. ' +
@@ -191,6 +193,17 @@ describe('check 1: checkStory', () => {
     expect(without?.image).toBeNull();
   });
 
+  it('never lets the writer promote a report to official, so its picture stays out', () => {
+    const brief = { region: 'us', org: null, lon: null, lat: null, kind: 'official', text: 'Q3 shipped.', sourceName: 'Lab', url: 'https://lab.example/q3' } as const;
+    const draft: Draft = { today: [], stories: [story({ image: { source: 0, alt: 'Launch image' } })], briefs: [brief] };
+    const pinned = pinOfficial(draft, new Set(['https://lab.example/zh']));
+    expect(pinned.stories[0].sources.map((s) => s.kind)).toEqual(['reported', 'official']);
+    expect(pinned.briefs[0].kind).toBe('reported');
+    expect(checkStory(pinned.stories[0], sources).story?.image).toBeNull();
+    const rumor = pinOfficial({ ...draft, stories: [story({ sources: [{ ...story().sources[0], kind: 'rumor' }] })] }, new Set());
+    expect(rumor.stories[0].sources[0].kind).toBe('rumor');
+  });
+
   it('refuses hype words', () => {
     const { check } = checkStory(story({ title: 'A game-changer: Qilin Lab releases Q3' }), sources);
     expect(check.kept).toBe(false);
@@ -367,11 +380,86 @@ describe('check 3 and assembly', () => {
   });
 });
 
+describe('company logos', () => {
+  it('matches the company the writer names, by alias or legal name', () => {
+    expect(findOrg('NVIDIA Corp.')?.name).toBe('NVIDIA');
+    expect(findOrg('Nvidia')?.name).toBe('NVIDIA');
+    expect(findOrg('Zhipu')?.name).toBe('Zhipu AI');
+    expect(findOrg('z.ai')?.name).toBe('Zhipu AI');
+    expect(findOrg('Kimi')?.name).toBe('Moonshot AI');
+    expect(findOrg('阿里巴巴')?.name).toBe('Alibaba');
+    expect(findOrg('Google DeepMind')?.name).toBe('Google DeepMind');
+    expect(findOrg('Semiconductor Industry Association')).toBeUndefined();
+    expect(findOrg(null)).toBeUndefined();
+  });
+
+  it('gives every name one company and every company an inert SVG logo', () => {
+    const owner = new Map<string, string>();
+    for (const org of ORGS) {
+      for (const name of [org.name, ...org.aliases]) {
+        expect(owner.get(orgKey(name)) ?? org.name, name).toBe(org.name);
+        owner.set(orgKey(name), org.name);
+      }
+      const logo = LOGOS[org.logo];
+      expect(logo).toMatch(/^data:image\/svg\+xml,/);
+      const svg = decodeURIComponent(logo.slice('data:image/svg+xml,'.length));
+      expect(svg).toMatch(/^<svg\b[\s\S]*<\/svg>$/);
+      expect(svg).not.toMatch(/<(script|style|foreignObject|image|a)\b|\son[a-z]+\s*=|href\s*=\s*['"](?!#)|url\(\s*(?!#)/i);
+    }
+  });
+
+  it('tells the writer the names that carry a logo', () => {
+    expect(writePrompt('2026-10-12', [])).toContain('Zhipu AI');
+  });
+
+  it('puts the logo on stories and briefs, never on a rumor', () => {
+    const brief = { region: 'us', org: 'OpenAI', lon: null, lat: null, text: 'OpenAI shipped Q3.', sourceName: 'OpenAI', url: 'https://lab.example/q3' } as const;
+    const draft: Draft = {
+      today: [{ story: 'q3', text: 'Qilin released Q3.' }],
+      stories: [story({ org: 'DeepSeek' })],
+      briefs: [{ ...brief, kind: 'official' }, { ...brief, kind: 'rumor' }],
+    };
+    const { issue } = assembleIssue({ date: '2026-10-12', number: 1, draft, zh: {}, sourceNamesZh: new Map(), images: new Map() });
+    expect(issue.stories[0].org?.name).toBe('DeepSeek');
+    expect(issue.briefs[0].org?.name).toBe('OpenAI');
+    expect(issue.briefs[1].org).toBeUndefined();
+    expect(() => validateIssue(issue)).not.toThrow();
+  });
+
+  it('leaves a company it does not know without a logo', () => {
+    const draft: Draft = { today: [{ story: 'q3', text: 'Qilin released Q3.' }], stories: [story()], briefs: [] };
+    const { issue } = assembleIssue({ date: '2026-10-12', number: 1, draft, zh: {}, sourceNamesZh: new Map(), images: new Map() });
+    expect(issue.stories[0].org).toBeUndefined();
+  });
+});
+
 describe('picking', () => {
   it('tells the picker what the last week covered', () => {
     const prompt = selectPrompt('2026-10-11', [], ['OpenAI releases nearly 400 AI-generated math results']);
     expect(prompt).toContain('Covered in the last 7 days');
     expect(prompt).toContain('OpenAI releases nearly 400 AI-generated math results');
+  });
+
+  const candidate = (link: string, kind: SourceKind): Candidate => ({
+    id: link, feed: 'x', title: 't', link, published: '2026-10-11T00:00:00Z', summary: '', sourceName: { en: 'X', zh: 'X' }, kind, lang: 'en', region: 'us',
+  });
+
+  it('keeps first-hand pages ahead of a third report of the same event', () => {
+    const reports = ['https://techcrunch.com/a', 'https://www.theverge.com/b', 'https://arstechnica.com/c'].map((u) => candidate(u, 'reported'));
+    expect(itemUrls(reports, ['https://openai.com/index/x'])).toEqual(['https://openai.com/index/x', 'https://techcrunch.com/a', 'https://www.theverge.com/b']);
+    expect(itemUrls([...reports, candidate('https://openai.com/news/y', 'official')], ['https://www.reuters.com/z'])).toEqual([
+      'https://openai.com/news/y',
+      'https://techcrunch.com/a',
+      'https://www.theverge.com/b',
+    ]);
+  });
+
+  it('counts a news page the picker adds as a report, and names company sites', () => {
+    expect(extraSource('https://www.reuters.com/technology/x')).toEqual({ name: 'reuters.com', kind: 'reported' });
+    expect(extraSource('https://techcrunch.com/2026/10/10/x').kind).toBe('reported');
+    expect(extraSource('https://openai.com/index/x')).toEqual({ name: 'OpenAI', kind: 'official' });
+    expect(extraSource('https://cloud.tencent.com/developer/x')).toEqual({ name: 'Tencent', kind: 'official' });
+    expect(extraSource('https://arxiv.org/abs/2610.01234')).toEqual({ name: 'arxiv.org', kind: 'official' });
   });
 });
 

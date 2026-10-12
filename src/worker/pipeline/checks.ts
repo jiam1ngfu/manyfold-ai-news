@@ -5,8 +5,21 @@
  * fails is removed and the story is kept. Everything is recorded for the run report.
  */
 
-import { plainText, tokenize } from '../../shared/issue';
+import { plainText, tokenize, type SourceKind } from '../../shared/issue';
 import type { Draft, DraftBrief, DraftQuote, DraftStory } from './draft';
+
+/**
+ * A source is official only when the material said so. The writer may mark a report as a
+ * rumor, never as official: that would change its attribution and let its pictures in.
+ */
+export function pinOfficial(draft: Draft, official: Set<string>): Draft {
+  const pin = <T extends { kind: SourceKind }>(item: T, url: string): T => (item.kind === 'official' && !official.has(url) ? { ...item, kind: 'reported' } : item);
+  return {
+    ...draft,
+    stories: draft.stories.map((s) => ({ ...s, sources: s.sources.map((src) => pin(src, src.url)) })),
+    briefs: draft.briefs.map((b) => pin(b, b.url)),
+  };
+}
 
 export interface SourceText {
   text: string;

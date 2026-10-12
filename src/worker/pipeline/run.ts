@@ -16,13 +16,14 @@ import { ensureSchema, getSetting, now, setSetting } from '../db';
 import { listConnectedAgents, credentialFor } from '../connect';
 import { safeErrorText } from '../a2a';
 import { saveIssue } from '../issues';
-import { validateIssue } from '../../shared/issue';
-import { NO_IMAGE_HOSTS, collectCandidates, type Candidate, type FeedResult } from './feeds';
+import { validateIssue, type SourceKind } from '../../shared/issue';
+import { NO_IMAGE_HOSTS, collectCandidates, isMediaUrl, type Candidate, type FeedResult } from './feeds';
+import { orgForUrl } from './orgs';
 import { fetchSnapshots, genericImages, type Snapshot } from './snapshot';
 import { reviewPrompt, selectPrompt, translatePrompt, writePrompt, type WriteItem } from './prompts';
 import { agentTurn } from './agent';
 import { extractJson, readDraft } from './draft';
-import { checkDraft, type ItemCheck } from './checks';
+import { checkDraft, pinOfficial, type ItemCheck } from './checks';
 import { assembleIssue, translationEntries } from './assemble';
 import { applyReview, readReview, type ReviewReport } from './review';
 
@@ -57,6 +58,23 @@ const MAX_SOURCES_PER_ITEM = 3;
 // Workers allow 50 outbound requests per invocation on the free plan: 16 feeds + this
 // many source pages + 4 agent turns stays under it.
 const MAX_SOURCE_FETCHES = 26;
+
+/**
+ * The pages one item is written from: official candidates, then the first-hand pages the
+ * picker found, then reports. The per-item cap never drops a first-hand source for a
+ * third report of the same event.
+ */
+export function itemUrls(chosen: Candidate[], extra: string[]): string[] {
+  const official = chosen.filter((c) => c.kind === 'official').map((c) => c.link);
+  const reports = chosen.filter((c) => c.kind !== 'official').map((c) => c.link);
+  const ordered = [...official, ...extra.filter((u) => !isMediaUrl(u)), ...reports, ...extra.filter(isMediaUrl)];
+  return [...new Set(ordered)].slice(0, MAX_SOURCES_PER_ITEM);
+}
+
+/** A page the picker added: a news site's page is a report, anything else first-hand. */
+export function extraSource(url: string): { name: string; kind: SourceKind } {
+  return { name: orgForUrl(url) ?? new URL(url).hostname.replace(/^www\./, ''), kind: isMediaUrl(url) ? 'reported' : 'official' };
+}
 
 /** The issue a run started now prepares: the morning after 19:30 UTC, today before it. */
 export function issueDateFor(at: Date): string {
@@ -197,21 +215,17 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'retry'
       .slice(0, 10)
       .map((raw) => {
         const item = (raw ?? {}) as { type?: unknown; candidates?: unknown; extraUrls?: unknown };
-        const chosen = (Array.isArray(item.candidates) ? item.candidates : [])
-          .map((id) => byId.get(String(id)))
-          .filter((c): c is Candidate => Boolean(c))
-          // Official sources first, so the per-item cap never drops them.
-          .sort((a, b) => Number(b.kind === 'official') - Number(a.kind === 'official'));
+        const chosen = (Array.isArray(item.candidates) ? item.candidates : []).map((id) => byId.get(String(id))).filter((c): c is Candidate => Boolean(c));
         const extra = (Array.isArray(item.extraUrls) ? item.extraUrls : []).filter((u): u is string => typeof u === 'string' && /^https:\/\//.test(u)).slice(0, 2);
-        return { type: item.type === 'brief' ? ('brief' as const) : ('story' as const), chosen, extra };
+        return { type: item.type === 'brief' ? ('brief' as const) : ('story' as const), urls: itemUrls(chosen, extra) };
       })
-      .filter((item) => item.chosen.length > 0 || item.extra.length > 0);
+      .filter((item) => item.urls.length > 0);
     report.picked = items.length;
     if (items.length === 0) throw new Error('The agent picked nothing usable.');
 
     // 3. Fetch every source we will hand to the writer.
     report.step = 'fetching sources';
-    const urls = items.flatMap((item) => [...item.chosen.map((c) => c.link), ...item.extra].slice(0, MAX_SOURCES_PER_ITEM)).slice(0, MAX_SOURCE_FETCHES);
+    const urls = items.flatMap((item) => item.urls).slice(0, MAX_SOURCE_FETCHES);
     const { snapshots, failures } = await fetchSnapshots(env, urls);
     report.sourcesFetched = snapshots.size;
     report.sourceFailures = failures;
@@ -225,13 +239,13 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'retry'
     const writeItems: WriteItem[] = items
       .map((item) => ({
         type: item.type,
-        sources: [...item.chosen.map((c) => c.link), ...item.extra]
-          .slice(0, MAX_SOURCES_PER_ITEM)
+        sources: item.urls
           .map((url): WriteItem['sources'][number] | null => {
             const snapshot = snapshots.get(url);
             const c = candidateByUrl.get(url);
             if (!snapshot || snapshot.text.length < 200) return null;
-            return { url, name: c?.sourceName.en ?? new URL(url).hostname, kind: c?.kind ?? 'official', lang: c?.lang ?? 'en', published: c?.published ?? null, snapshot };
+            const { name, kind } = c ? { name: c.sourceName.en, kind: c.kind } : extraSource(url);
+            return { url, name, kind, lang: c?.lang ?? 'en', published: c?.published ?? null, snapshot };
           })
           .filter((s): s is WriteItem['sources'][number] => s !== null),
       }))
@@ -240,7 +254,8 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'retry'
 
     // 4. The agent writes the English master (billed turn 2).
     report.step = 'writing';
-    const draft = readDraft(extractJson(await agentTurn(cred, `aiin5-${runId}-write`, writePrompt(issueDate, writeItems))));
+    const official = new Set(writeItems.flatMap((item) => item.sources.filter((s) => s.kind === 'official').map((s) => s.url)));
+    const draft = pinOfficial(readDraft(extractJson(await agentTurn(cred, `aiin5-${runId}-write`, writePrompt(issueDate, writeItems)))), official);
 
     // 5. Check 1: code checks every quote and number against the fetched texts.
     report.step = 'checking';
