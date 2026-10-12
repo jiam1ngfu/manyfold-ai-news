@@ -6,6 +6,8 @@
  *   /en/2026-10-12/3      one issue, opened at its third story (share links)
  *   /en/archive           past issues
  *   /en/about             how it's made, corrections
+ *   /en/confirm?t=…       the link in the confirmation email
+ *   /en/unsubscribe?t=…   the unsubscribe link in every email
  * No router dependency: history.pushState plus a popstate listener. These paths are
  * written without the site's base path: navigate and Link add it, useRoute strips it.
  */
@@ -20,6 +22,8 @@ export type Route =
   | { name: 'issue'; lang: Lang; date: string; story: number | null }
   | { name: 'archive'; lang: Lang }
   | { name: 'about'; lang: Lang }
+  | { name: 'confirm'; lang: Lang }
+  | { name: 'unsubscribe'; lang: Lang }
   | { name: 'notFound'; lang: Lang };
 
 const LANG_KEY = 'aiin5.lang';
@@ -33,6 +37,7 @@ export function parseRoute(pathname: string): Route {
   if (!second) return { name: 'today', lang };
   if (second === 'archive' && !third) return { name: 'archive', lang };
   if (second === 'about' && !third) return { name: 'about', lang };
+  if ((second === 'confirm' || second === 'unsubscribe') && !third) return { name: second, lang };
   if (/^\d{4}-\d{2}-\d{2}$/.test(second) && parts.length <= 3) {
     const story = third && /^\d{1,2}$/.test(third) ? Number(third) : null;
     if (third && story === null) return { name: 'notFound', lang };
@@ -53,6 +58,9 @@ export function pathFor(route: Route): string {
       return `/${route.lang}/archive`;
     case 'about':
       return `/${route.lang}/about`;
+    case 'confirm':
+    case 'unsubscribe':
+      return `/${route.lang}/${route.name}`;
     case 'notFound':
       return `/${route.lang}/`;
   }
@@ -61,6 +69,8 @@ export function pathFor(route: Route): string {
 /** The same page in another language. */
 export function withLang(route: Route, lang: Lang): string {
   if (route.name === 'root' || route.name === 'notFound') return `/${lang}/`;
+  // The email links carry their token in the query; keep it when switching language.
+  if (route.name === 'confirm' || route.name === 'unsubscribe') return `${pathFor({ ...route, lang })}${location.search}`;
   return pathFor({ ...route, lang });
 }
 

@@ -14,6 +14,16 @@
 #   npx wrangler secret put ADMIN_PASSWORD
 # ADMIN_PASSWORD=
 
+# Email. Links in emails point at SITE_URL (wrangler.jsonc sets the deployed site).
+# Without RESEND_API_KEY and EMAIL_FROM nothing is sent: emails are logged and /admin
+# shows a preview. In production set both as secrets:
+#   npx wrangler secret put RESEND_API_KEY
+#   npx wrangler secret put EMAIL_FROM        # e.g. AI in 5 <hello@your-domain>
+# SITE_URL=http://localhost:5173/ai-news
+# RESEND_API_KEY=
+# EMAIL_FROM=
+# EMAIL_POSTAL_ADDRESS=
+
 # Encrypts the Manyfold device code and agent tokens stored in D1.
 # If unset, a random key is generated on first use and stored in the same database.
 # Set this (>=32 chars) to keep the key out of the database:

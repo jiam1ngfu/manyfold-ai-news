@@ -17,6 +17,18 @@ export interface Env {
   CONFIG_ENCRYPTION_KEY?: string;
   /** Optional: when set, all routes except /api/health and /api/state require x-admin-password. */
   ADMIN_PASSWORD?: string;
+
+  /** The site's public origin, e.g. https://aiin5.co. Links in emails point here. */
+  SITE_URL?: string;
+  /** Sender, e.g. "AI in 5 <hello@aiin5.co>". Its domain must be verified with the provider. */
+  EMAIL_FROM?: string;
+  /** Secret. Resend API key; without it (or EMAIL_FROM) emails are logged, not sent. */
+  RESEND_API_KEY?: string;
+  /** Optional postal address for the email footer (CAN-SPAM). */
+  EMAIL_POSTAL_ADDRESS?: string;
+
+  /** Readers' questions wait here for the answer agent (wrangler.jsonc queues). */
+  ASK_QUEUE?: Queue<{ id: string }>;
 }
 
 /** Everything needed to talk to one agent over A2A. */

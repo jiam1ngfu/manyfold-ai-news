@@ -8,10 +8,13 @@ import { useEffect, useState } from 'react';
 import type { Issue, IssueResponse, Lang } from '../../shared/issue';
 import { COPY, localDate } from './i18n';
 import Masthead from './Masthead';
-import { AboutPage, ArchivePage, EmptyState, IssuePage, Message } from './pages';
-import { ReaderError, fetchDraft, fetchIssue, fetchLatest } from './data';
+import { AboutPage, ArchivePage, EmailLinkPage, EmptyState, IssuePage, Message } from './pages';
+import { ReaderError, captureAskKey, fetchDraft, fetchIssue, fetchLatest } from './data';
 import { navigate, pathFor, preferredLang, useRoute } from './router';
 import './reader.css';
+
+// Before the first render: an email link's ?k=… is stored and taken out of the address.
+captureAskKey();
 
 const FONTS =
   'https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Schibsted+Grotesk:wght@400..700&family=Noto+Serif+SC:wght@400;600&display=swap';
@@ -80,12 +83,13 @@ export default function ReaderApp() {
   const T = COPY[lang];
   if (route.name === 'root') return null;
 
-  if (route.name === 'archive' || route.name === 'about' || route.name === 'notFound') {
+  if (route.name === 'archive' || route.name === 'about' || route.name === 'confirm' || route.name === 'unsubscribe' || route.name === 'notFound') {
     return (
       <>
         <Masthead lang={lang} route={route} />
         {route.name === 'archive' && <ArchivePage lang={lang} />}
         {route.name === 'about' && <AboutPage lang={lang} />}
+        {(route.name === 'confirm' || route.name === 'unsubscribe') && <EmailLinkPage lang={lang} kind={route.name} />}
         {route.name === 'notFound' && <Message lang={lang} title={T.notFoundTitle} text={T.notFoundText} />}
       </>
     );

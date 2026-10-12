@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE INDEX IF NOT EXISTS idx_issues_status_date ON issues (status, date);
 
 -- Email subscribers. Personal data: never logged, never returned by the API.
--- status stays 'pending' until confirmation mail exists.
+-- status: pending (until the confirmation link is clicked), confirmed or unsubscribed.
 CREATE TABLE IF NOT EXISTS subscribers (
   email      TEXT PRIMARY KEY,
   lang       TEXT NOT NULL,
@@ -160,6 +160,49 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_date ON pipeline_runs (issue_date, started_at);
+
+-- Every email we send or try to send. Personal data, like subscribers.
+-- kind: issue (ref = issue date), confirm or test (ref = send time).
+-- status: sending, sent, failed or skipped. The primary key is what stops a second copy
+-- of the same issue: a recipient is claimed with INSERT OR IGNORE before sending.
+CREATE TABLE IF NOT EXISTS email_log (
+  email      TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  ref        TEXT NOT NULL,
+  status     TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 1,
+  error      TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (email, kind, ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_log_ref ON email_log (kind, ref, status);
+
+-- Readers' own questions (src/worker/ask). id seeds the A2A messageId of its one turn.
+-- asker is a salted hash of the subscriber's address, never the address itself.
+-- status: queued, answering, answered, partial, none or failed. answer is the checked
+-- answer JSON. cached_from points at the row whose answer was reused, costing nothing.
+CREATE TABLE IF NOT EXISTS questions (
+  id          TEXT PRIMARY KEY,
+  issue_date  TEXT NOT NULL,
+  story_id    TEXT NOT NULL,
+  lang        TEXT NOT NULL,
+  question    TEXT NOT NULL,
+  norm        TEXT NOT NULL,
+  asker       TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  answer      TEXT,
+  dropped     INTEGER NOT NULL DEFAULT 0,
+  cached_from TEXT,
+  error       TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_questions_cache ON questions (issue_date, story_id, lang, norm);
+CREATE INDEX IF NOT EXISTS idx_questions_asker ON questions (asker, created_at);
+CREATE INDEX IF NOT EXISTS idx_questions_created ON questions (created_at);
 `;
 
 /**

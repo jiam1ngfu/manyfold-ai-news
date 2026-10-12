@@ -1,10 +1,11 @@
 /**
  * The reader's calls to the public API, and the little bit of state it keeps in the
- * browser (whether this reader has subscribed). No admin password is ever sent.
+ * browser: whether this reader has subscribed, and the ask key that lets a confirmed
+ * subscriber ask their own questions. No admin password is ever sent.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { IssueResponse, IssueSummary, Lang } from '../../shared/issue';
+import type { IssueResponse, IssueSummary, Lang, Quote } from '../../shared/issue';
 import { withBase } from '../../shared/base';
 import { getStoredPassword } from '../api';
 
@@ -56,6 +57,70 @@ export function subscribe(email: string, lang: Lang, source: 'done' | 'gate') {
     localStorage.setItem(SUBSCRIBED_KEY, '1');
     window.dispatchEvent(new Event('aiin5:subscribed'));
   });
+}
+
+const markSubscribed = (value: boolean) => {
+  if (value) localStorage.setItem(SUBSCRIBED_KEY, '1');
+  else localStorage.removeItem(SUBSCRIBED_KEY);
+  window.dispatchEvent(new Event('aiin5:subscribed'));
+};
+
+const ASK_KEY = 'aiin5.askKey';
+
+export const askKey = (): string | null => localStorage.getItem(ASK_KEY);
+
+/**
+ * Links in our emails carry the reader's ask key as ?k=…: keep it on this device, then
+ * take it out of the address bar so it is not shared along with the page.
+ */
+export function captureAskKey(): void {
+  const url = new URL(location.href);
+  const key = url.searchParams.get('k');
+  if (!key) return;
+  if (key.length <= 600) {
+    localStorage.setItem(ASK_KEY, key);
+    markSubscribed(true);
+  }
+  url.searchParams.delete('k');
+  history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+export const confirmSubscription = (token: string) =>
+  request<{ ok: true; askKey?: string }>('/api/subscribe/confirm', { method: 'POST', body: JSON.stringify({ token }) }).then((r) => {
+    if (r.askKey) localStorage.setItem(ASK_KEY, r.askKey);
+    markSubscribed(true);
+  });
+export const unsubscribe = (token: string) =>
+  post('/api/unsubscribe', { token }).then(() => {
+    localStorage.removeItem(ASK_KEY);
+    markSubscribed(false);
+  });
+
+export interface OwnAnswer {
+  status: 'answered' | 'partial' | 'none';
+  a: string;
+  cites: Quote[];
+}
+
+export interface AskState {
+  id: string;
+  status: string;
+  answer?: OwnAnswer;
+  remaining?: number;
+}
+
+export const askQuestion = (date: string, storyId: string, lang: Lang, question: string) =>
+  request<AskState>('/api/ask', { method: 'POST', body: JSON.stringify({ key: askKey(), date, storyId, lang, question }) });
+
+/** Polls until the answer is ready: answers usually take 10 to 30 seconds. */
+export async function waitForAnswer(id: string, signal: AbortSignal): Promise<AskState> {
+  for (let i = 0; i < 90; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, i < 5 ? 2000 : 3000));
+    if (signal.aborted) throw new ReaderError(0, 'aborted');
+    const state = await request<AskState>(`/api/ask/${encodeURIComponent(id)}`);
+    if (state.status !== 'queued' && state.status !== 'answering') return state;
+  }
+  throw new ReaderError(504, 'timeout');
 }
 
 /** Has this browser subscribed? Shared across the done section and the ask sheet. */

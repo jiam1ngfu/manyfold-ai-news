@@ -167,6 +167,7 @@ function RunDetails({ id }: { id: string }) {
 export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
   const [writer, setWriter] = useState<string | null>(null);
   const [reviewer, setReviewer] = useState<string | null>(null);
+  const [answerer, setAnswerer] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [issues, setIssues] = useState<IssueRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -178,11 +179,12 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
   const refresh = useCallback(async () => {
     try {
       const [pipeline, list] = await Promise.all([
-        api<{ writerAgentId: string | null; reviewerAgentId: string | null; runs: RunSummary[] }>('/api/admin/pipeline'),
+        api<{ writerAgentId: string | null; reviewerAgentId: string | null; answererAgentId: string | null; runs: RunSummary[] }>('/api/admin/pipeline'),
         api<{ issues: IssueRow[] }>('/api/admin/issues'),
       ]);
       setWriter(pipeline.writerAgentId);
       setReviewer(pipeline.reviewerAgentId);
+      setAnswerer(pipeline.answererAgentId);
       setRuns(pipeline.runs);
       setIssues(list.issues);
     } catch (cause) {
@@ -194,11 +196,11 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
     void refresh();
   }, [refresh]);
 
-  const chooseAgent = async (role: 'writer' | 'reviewer', agentId: string) => {
+  const chooseAgent = async (role: 'writer' | 'reviewer' | 'answerer', agentId: string) => {
     setError('');
     try {
       await api('/api/admin/pipeline/agent', { method: 'PUT', body: JSON.stringify({ role, agentId }) });
-      (role === 'writer' ? setWriter : setReviewer)(agentId);
+      ({ writer: setWriter, reviewer: setReviewer, answerer: setAnswerer })[role](agentId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -252,8 +254,8 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
       </p>
 
       <h3>Agents</h3>
-      {agents.length < 2 ? (
-        <p className="muted">Connect two agents in Settings: one writes, a different one reviews.</p>
+      {agents.length < 3 ? (
+        <p className="muted">Connect three agents in Settings: one writes, a different one reviews, a third answers readers’ questions.</p>
       ) : null}
       {agents.length > 0 && (
         <div className="agent-roles">
@@ -264,7 +266,7 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
                 Choose the writer
               </option>
               {agents.map((a) => (
-                <option key={a.agentId} value={a.agentId} disabled={a.agentId === reviewer}>
+                <option key={a.agentId} value={a.agentId} disabled={a.agentId === reviewer || a.agentId === answerer}>
                   {a.name}
                 </option>
               ))}
@@ -277,7 +279,20 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
                 Choose a different agent to review
               </option>
               {agents.map((a) => (
-                <option key={a.agentId} value={a.agentId} disabled={a.agentId === writer}>
+                <option key={a.agentId} value={a.agentId} disabled={a.agentId === writer || a.agentId === answerer}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="small muted">Answerer: readers’ own questions (no tools, own sandbox)</span>
+            <select className="select" value={answerer ?? ''} onChange={(e) => void chooseAgent('answerer', e.target.value)}>
+              <option value="" disabled>
+                Choose a third agent to answer readers
+              </option>
+              {agents.map((a) => (
+                <option key={a.agentId} value={a.agentId} disabled={a.agentId === writer || a.agentId === reviewer}>
                   {a.name}
                 </option>
               ))}

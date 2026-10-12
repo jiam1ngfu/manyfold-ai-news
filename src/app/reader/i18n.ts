@@ -64,7 +64,19 @@ type Copy = {
   subButton: string;
   subFine: string;
   subDone: string;
+  subConfirmed: string;
   subFailed: string;
+  confirmWorking: string;
+  confirmedTitle: string;
+  confirmedText: string;
+  linkFailedTitle: string;
+  confirmFailedText: string;
+  unsubTitle: string;
+  unsubText: string;
+  unsubButton: string;
+  unsubDoneTitle: string;
+  unsubDoneText: string;
+  unsubFailedText: string;
   share: string;
   shared: string;
   previous: string;
@@ -79,7 +91,17 @@ type Copy = {
   close: string;
   gateText: string;
   gateButton: string;
-  ownSoon: string;
+  askPlaceholder: string;
+  askButton: string;
+  quota: (n: number) => string;
+  quotaDaily: string;
+  answering: string;
+  answeringHint: string;
+  askTry: string;
+  askNeedKey: string;
+  askLimit: string;
+  askPaused: string;
+  askFailed: string;
   dek: (weekday: string, stories: number, minutes: number) => string;
   emptyTitle: string;
   emptyText: string;
@@ -123,8 +145,20 @@ export const COPY: Record<Lang, Copy> = {
     subLabel: 'Get it in your inbox every morning',
     subButton: 'Subscribe',
     subFine: 'One email a day. Unsubscribe in one click.',
-    subDone: 'You’re on the list. The first email will ask you to confirm.',
+    subDone: 'Almost done: check your inbox and click the link to confirm.',
+    subConfirmed: 'You’re subscribed. The next issue arrives at 7:00, your local time.',
     subFailed: 'That didn’t work. Check the address and try again.',
+    confirmWorking: 'Confirming your subscription…',
+    confirmedTitle: 'You’re subscribed',
+    confirmedText: 'The next issue arrives at 7:00, your local time. Every email has a one-click unsubscribe link.',
+    linkFailedTitle: 'This link didn’t work',
+    confirmFailedText: 'It may have expired. Subscribe again and we’ll send a fresh link.',
+    unsubTitle: 'Unsubscribe from AI in 5?',
+    unsubText: 'You won’t get the daily email any more. The site stays open to read.',
+    unsubButton: 'Unsubscribe',
+    unsubDoneTitle: 'You’re unsubscribed',
+    unsubDoneText: 'You won’t hear from us again. If you change your mind, subscribe on any issue.',
+    unsubFailedText: 'Reply to any of our emails and we’ll take you off the list by hand.',
     share: 'Share this issue',
     shared: 'Link copied',
     previous: 'Read the previous issue',
@@ -139,7 +173,17 @@ export const COPY: Record<Lang, Copy> = {
     close: 'Close',
     gateText: 'Asking your own questions is free for subscribers. You’ll also get each issue at 7:00, your local time.',
     gateButton: 'Subscribe',
-    ownSoon: 'Asking your own questions opens soon, and you’ll hear about it first. Until then, these questions are answered from the sources:',
+    askPlaceholder: 'Ask about this story',
+    askButton: 'Ask',
+    quota: (n) => `${n} ${n === 1 ? 'question' : 'questions'} left today`,
+    quotaDaily: 'Up to 10 questions a day. Answers come only from the sources.',
+    answering: 'Reading the sources…',
+    answeringHint: 'Usually 10 to 30 seconds.',
+    askTry: 'Or start with one of these:',
+    askNeedKey: 'To ask on this device, open “Ask about this story” from any AI in 5 email.',
+    askLimit: 'You’ve asked your 10 questions for today. More tomorrow.',
+    askPaused: 'Asking is paused right now. Try again later.',
+    askFailed: 'Something went wrong. Try again.',
     dek: (weekday, stories, minutes) => `${weekday}’s issue: ${stories} stories, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
     emptyTitle: 'The first issue is on its way.',
     emptyText: 'Every morning at 7, the AI news that matters, from the US, China and beyond, in about five minutes.',
@@ -213,8 +257,20 @@ export const COPY: Record<Lang, Copy> = {
     subLabel: '每天早上送到你的邮箱',
     subButton: '订阅',
     subFine: '每天只有 1 封，随时一键退订。',
-    subDone: '已加入订阅名单。第一封邮件会请你确认。',
+    subDone: '还差一步：请到邮箱里点确认链接。',
+    subConfirmed: '你已订阅。下一期会在你当地时间早上 7 点送到。',
     subFailed: '没有成功，请检查邮箱地址后重试。',
+    confirmWorking: '正在确认订阅…',
+    confirmedTitle: '订阅成功',
+    confirmedText: '下一期会在你当地时间早上 7 点送到。每封邮件底部都能一键退订。',
+    linkFailedTitle: '这个链接无效',
+    confirmFailedText: '链接可能已经过期。重新订阅一次，我们会再发一封确认邮件。',
+    unsubTitle: '退订 AI in 5？',
+    unsubText: '退订后不再收到每日邮件，网站照常可以看。',
+    unsubButton: '确认退订',
+    unsubDoneTitle: '已退订',
+    unsubDoneText: '我们不会再给你发邮件。想回来的话，在任何一期页面上重新订阅就行。',
+    unsubFailedText: '回复我们任意一封邮件，我们会手动帮你退订。',
     share: '分享这期',
     shared: '链接已复制',
     previous: '看上一期',
@@ -229,7 +285,17 @@ export const COPY: Record<Lang, Copy> = {
     close: '关闭',
     gateText: '订阅后即可免费自己提问。每天早上 7 点（当地时间），你还会收到当天的简报。',
     gateButton: '订阅',
-    ownSoon: '"自己提问"即将开放，订阅者会最先收到通知。在那之前，下面这些问题都已根据来源作答：',
+    askPlaceholder: '输入关于这条新闻的问题',
+    askButton: '提问',
+    quota: (n) => `今天还可以问 ${n} 次`,
+    quotaDaily: '每天最多 10 个问题，回答只依据来源。',
+    answering: '正在根据来源作答…',
+    answeringHint: '通常需要 10–30 秒。',
+    askTry: '也可以先看看这些问题：',
+    askNeedKey: '要在这台设备上提问，请从任意一封 AI in 5 邮件里点开“就这条新闻提问”。',
+    askLimit: '今天的 10 次提问已用完，明天再来。',
+    askPaused: '提问暂时关闭，请稍后再试。',
+    askFailed: '出了点问题，请再试一次。',
     dek: (weekday, stories, minutes) => `${weekday}，${stories} 条新闻，约 ${minutes} 分钟`,
     emptyTitle: '第一期正在路上。',
     emptyText: '每天早上 7 点，5 分钟读懂全球 AI，美国和中国都不漏。',
