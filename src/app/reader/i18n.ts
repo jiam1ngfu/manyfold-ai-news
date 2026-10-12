@@ -64,6 +64,7 @@ type Copy = {
   subButton: string;
   subFine: string;
   subDone: string;
+  subConfirmed: string;
   subFailed: string;
   confirmWorking: string;
   confirmedTitle: string;
@@ -90,7 +91,17 @@ type Copy = {
   close: string;
   gateText: string;
   gateButton: string;
-  ownSoon: string;
+  askPlaceholder: string;
+  askButton: string;
+  quota: (n: number) => string;
+  quotaDaily: string;
+  answering: string;
+  answeringHint: string;
+  askTry: string;
+  askNeedKey: string;
+  askLimit: string;
+  askPaused: string;
+  askFailed: string;
   dek: (weekday: string, stories: number, minutes: number) => string;
   emptyTitle: string;
   emptyText: string;
@@ -135,6 +146,7 @@ export const COPY: Record<Lang, Copy> = {
     subButton: 'Subscribe',
     subFine: 'One email a day. Unsubscribe in one click.',
     subDone: 'Almost done: check your inbox and click the link to confirm.',
+    subConfirmed: 'You’re subscribed. The next issue arrives at 7:00, your local time.',
     subFailed: 'That didn’t work. Check the address and try again.',
     confirmWorking: 'Confirming your subscription…',
     confirmedTitle: 'You’re subscribed',
@@ -161,7 +173,17 @@ export const COPY: Record<Lang, Copy> = {
     close: 'Close',
     gateText: 'Asking your own questions is free for subscribers. You’ll also get each issue at 7:00, your local time.',
     gateButton: 'Subscribe',
-    ownSoon: 'Asking your own questions opens soon, and you’ll hear about it first. Until then, these questions are answered from the sources:',
+    askPlaceholder: 'Ask about this story',
+    askButton: 'Ask',
+    quota: (n) => `${n} ${n === 1 ? 'question' : 'questions'} left today`,
+    quotaDaily: 'Up to 10 questions a day. Answers come only from the sources.',
+    answering: 'Reading the sources…',
+    answeringHint: 'Usually 10 to 30 seconds.',
+    askTry: 'Or start with one of these:',
+    askNeedKey: 'To ask on this device, open “Ask about this story” from any AI in 5 email.',
+    askLimit: 'You’ve asked your 10 questions for today. More tomorrow.',
+    askPaused: 'Asking is paused right now. Try again later.',
+    askFailed: 'Something went wrong. Try again.',
     dek: (weekday, stories, minutes) => `${weekday}’s issue: ${stories} stories, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
     emptyTitle: 'The first issue is on its way.',
     emptyText: 'Every morning at 7, the AI news that matters, from the US, China and beyond, in about five minutes.',
@@ -236,6 +258,7 @@ export const COPY: Record<Lang, Copy> = {
     subButton: '订阅',
     subFine: '每天只有 1 封，随时一键退订。',
     subDone: '还差一步：请到邮箱里点确认链接。',
+    subConfirmed: '你已订阅。下一期会在你当地时间早上 7 点送到。',
     subFailed: '没有成功，请检查邮箱地址后重试。',
     confirmWorking: '正在确认订阅…',
     confirmedTitle: '订阅成功',
@@ -262,7 +285,17 @@ export const COPY: Record<Lang, Copy> = {
     close: '关闭',
     gateText: '订阅后即可免费自己提问。每天早上 7 点（当地时间），你还会收到当天的简报。',
     gateButton: '订阅',
-    ownSoon: '"自己提问"即将开放，订阅者会最先收到通知。在那之前，下面这些问题都已根据来源作答：',
+    askPlaceholder: '输入关于这条新闻的问题',
+    askButton: '提问',
+    quota: (n) => `今天还可以问 ${n} 次`,
+    quotaDaily: '每天最多 10 个问题，回答只依据来源。',
+    answering: '正在根据来源作答…',
+    answeringHint: '通常需要 10–30 秒。',
+    askTry: '也可以先看看这些问题：',
+    askNeedKey: '要在这台设备上提问，请从任意一封 AI in 5 邮件里点开“就这条新闻提问”。',
+    askLimit: '今天的 10 次提问已用完，明天再来。',
+    askPaused: '提问暂时关闭，请稍后再试。',
+    askFailed: '出了点问题，请再试一次。',
     dek: (weekday, stories, minutes) => `${weekday}，${stories} 条新闻，约 ${minutes} 分钟`,
     emptyTitle: '第一期正在路上。',
     emptyText: '每天早上 7 点，5 分钟读懂全球 AI，美国和中国都不漏。',

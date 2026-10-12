@@ -1,6 +1,6 @@
 /**
  * The admin console at /admin: loads /api/state once, routes between the tabs by
- * location.hash (/admin#issues, #email, #chat, #settings — no router dependency), and raises the
+ * location.hash (/admin#issues, #email, #questions, #chat, #settings — no router dependency), and raises the
  * password gate whenever the deployment requires one and the stored password is
  * missing or wrong. Nothing in the reader links here.
  */
@@ -14,11 +14,12 @@ import PasswordGate from './components/PasswordGate';
 import Logo from './components/Logo';
 import IssuesView from './components/IssuesView';
 import EmailView from './components/EmailView';
+import QuestionsView from './components/QuestionsView';
 import './styles.css';
 
-type Tab = 'issues' | 'email' | 'chat' | 'settings';
+type Tab = 'issues' | 'email' | 'questions' | 'chat' | 'settings';
 
-const TABS: Tab[] = ['issues', 'email', 'chat', 'settings'];
+const TABS: Tab[] = ['issues', 'email', 'questions', 'chat', 'settings'];
 const tabFromHash = (): Tab => TABS.find((t) => location.hash === `#${t}`) ?? 'issues';
 
 export default function App() {
@@ -77,7 +78,7 @@ export default function App() {
           <h1>
             <Logo />
           </h1>
-          <p className="muted">Admin: issues, email, connected agents, chat and settings.</p>
+          <p className="muted">Admin: issues, email, readers’ questions, connected agents, chat and settings.</p>
         </div>
         <nav className="tabs" aria-label="Pages">
           <a className={tab === 'issues' ? 'tab active' : 'tab'} href="#issues">
@@ -85,6 +86,9 @@ export default function App() {
           </a>
           <a className={tab === 'email' ? 'tab active' : 'tab'} href="#email">
             Email
+          </a>
+          <a className={tab === 'questions' ? 'tab active' : 'tab'} href="#questions">
+            Questions
           </a>
           <a className={tab === 'chat' ? 'tab active' : 'tab'} href="#chat">
             Chat
@@ -97,6 +101,7 @@ export default function App() {
 
       {tab === 'issues' && <IssuesView agents={state.agents} />}
       {tab === 'email' && <EmailView />}
+      {tab === 'questions' && <QuestionsView />}
       {tab === 'chat' && <ChatView agents={state.agents} initialSession={state.connect.session} refreshState={refreshState} />}
       {tab === 'settings' && <SettingsView agents={state.agents} initialSession={state.connect.session} refreshState={refreshState} />}
 

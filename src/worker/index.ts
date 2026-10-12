@@ -20,20 +20,24 @@
  *   POST   /api/subscribe                   open   join the email list; sends the confirmation (throttled)
  *   POST   /api/subscribe/confirm           open   the confirmation link (signed token)
  *   POST   /api/unsubscribe                 open   the unsubscribe link and one-click header (signed token)
+ *   POST   /api/ask                         open   a subscriber's own question (ask key; queued, billed)
+ *   GET    /api/ask/:id                     open   that question's checked answer, once ready
  *   POST   /api/feedback                    open   "was this issue useful" (throttled)
  *   POST   /api/reports                     open   "report a problem" (throttled)
  *   GET    /api/admin/issues                admin  every issue, drafts included
  *   PUT    /api/admin/issues/:date          admin  validate and store an issue, as draft or published
  *   GET    /api/admin/issues/:date          admin  one issue in any status (draft preview)
  *   POST   /api/admin/issues/:date/status   admin  publish or unpublish
- *   GET    /api/admin/pipeline              admin  writer and review agents, recent runs
- *   PUT    /api/admin/pipeline/agent        admin  choose the writer or the review agent
+ *   GET    /api/admin/pipeline              admin  writer, review and answer agents, recent runs
+ *   PUT    /api/admin/pipeline/agent        admin  choose the writer, review or answer agent
  *   GET    /api/admin/pipeline/sources      admin  read feeds and a few sources (no agent, free)
  *   GET    /api/admin/pipeline/runs/:id     admin  one run report
  *   POST   /api/admin/pipeline/run          admin  run the pipeline now (billed; needs confirm)
  *   GET    /api/admin/email                 admin  provider, subscriber counts, deliveries (no addresses)
  *   GET    /api/admin/email/preview         admin  an issue rendered as the email
  *   POST   /api/admin/email/test            admin  send one issue email to one address
+ *   GET    /api/admin/ask                   admin  readers' questions: limits, daily counts, recent ones
+ *   PUT    /api/admin/ask                   admin  pause or resume asking, set the daily limit
  *
  * The scheduled handler runs the pipeline daily at 19:30 UTC, and again at 20:30 UTC only if
  * that run failed; it only saves drafts.
@@ -64,6 +68,7 @@ import { getAnyIssue, getIssue, getLatestIssue, listAllIssues, listIssues, saveI
 import { RETRY_CRON, checkSources, getRun, listRuns, retryIfFailed, reviewerAgentId, runPipeline, setReviewerAgent, setWriterAgent, writerAgentId } from './pipeline/run';
 import { clientKey, confirmSubscription, isEmail, recordFeedback, recordReport, subscribe, unsubscribe } from './public';
 import { deliverDue, emailStatus, previewIssueEmail, sendConfirmation, sendTest } from './email/deliver';
+import { answererAgentId, askOverview, askQuestion, getQuestion, processQuestion, setAnswererAgent, setAskSettings, type AskMessage } from './ask/questions';
 
 const SERVICE = 'cloudflare-worker-starter';
 const EMAIL_CRON = '*/15 * * * *';
@@ -107,11 +112,13 @@ const adminHeaderOk = (c: { env: Env; req: { header: (name: string) => string | 
 
 // The reader's routes are the site itself, so they stay open: reading published issues
 // (read-only, cacheable, no agent calls, no credentials) and throttled, strictly
-// validated writes. None of them touches an agent. The only secret any of them uses is
-// the mail provider key, to send a confirmation to the address just submitted.
-const READER_POSTS = new Set(['/api/subscribe', '/api/subscribe/confirm', '/api/unsubscribe', '/api/feedback', '/api/reports']);
+// validated writes. None of them calls an agent itself: a subscriber's question is
+// stored and queued, and the queue consumer makes the one billed turn. The only secret
+// any of them uses is the mail provider key, to confirm the address just submitted.
+const READER_POSTS = new Set(['/api/subscribe', '/api/subscribe/confirm', '/api/unsubscribe', '/api/feedback', '/api/reports', '/api/ask']);
 const isReaderRoute = (method: string, path: string): boolean =>
-  (method === 'GET' && (path === '/api/issues' || path.startsWith('/api/issues/'))) || (method === 'POST' && READER_POSTS.has(path));
+  (method === 'GET' && (path === '/api/issues' || path.startsWith('/api/issues/') || path.startsWith('/api/ask/'))) ||
+  (method === 'POST' && READER_POSTS.has(path));
 
 // Everything else except /api/health and /api/state needs the password (when one is set).
 app.use('/api/*', async (c, next) => {
@@ -256,6 +263,10 @@ app.post('/api/unsubscribe', async (c) => {
   return c.json({ ok: true });
 });
 
+app.post('/api/ask', async (c) => c.json(await askQuestion(c.env, await readBody(c), await client(c))));
+
+app.get('/api/ask/:id', async (c) => c.json(await getQuestion(c.env, c.req.param('id'))));
+
 app.post('/api/feedback', async (c) => {
   await recordFeedback(c.env, await readBody(c), await client(c));
   return c.json({ ok: true });
@@ -289,19 +300,27 @@ app.post('/api/admin/issues/:date/status', async (c) => {
 /* ───────── admin: pipeline ───────── */
 
 app.get('/api/admin/pipeline', async (c) =>
-  c.json({ writerAgentId: await writerAgentId(c.env), reviewerAgentId: await reviewerAgentId(c.env), runs: await listRuns(c.env) }),
+  c.json({
+    writerAgentId: await writerAgentId(c.env),
+    reviewerAgentId: await reviewerAgentId(c.env),
+    answererAgentId: await answererAgentId(c.env),
+    runs: await listRuns(c.env),
+  }),
 );
 
-// The review agent must stay independent of the writer, so one agent cannot be both.
+// Three roles, three different agents: the reviewer stays independent of the writer, and
+// the answerer, which reads untrusted reader questions, shares nothing with either.
 app.put('/api/admin/pipeline/agent', async (c) => {
   const body = await readBody(c);
   const agentId = typeof body?.agentId === 'string' ? body.agentId : '';
-  const role = body?.role === 'reviewer' ? 'reviewer' : 'writer';
+  const role = body?.role === 'reviewer' || body?.role === 'answerer' ? body.role : 'writer';
   const agents = await listConnectedAgents(c.env);
   if (!agents.some((a) => a.agentId === agentId)) throw new HttpError(400, 'bad_request', 'That agent is not connected.');
-  const other = role === 'reviewer' ? await writerAgentId(c.env) : await reviewerAgentId(c.env);
-  if (agentId === other) throw new HttpError(400, 'bad_request', 'The writer and the review agent must be different agents.');
-  await (role === 'reviewer' ? setReviewerAgent : setWriterAgent)(c.env, agentId);
+  const current = { writer: await writerAgentId(c.env), reviewer: await reviewerAgentId(c.env), answerer: await answererAgentId(c.env) };
+  if (Object.entries(current).some(([r, id]) => r !== role && id === agentId)) {
+    throw new HttpError(400, 'bad_request', 'The writer, the reviewer and the answerer must be three different agents.');
+  }
+  await ({ writer: setWriterAgent, reviewer: setReviewerAgent, answerer: setAnswererAgent } as const)[role](c.env, agentId);
   return c.json({ ok: true });
 });
 
@@ -344,6 +363,15 @@ app.post('/api/admin/email/test', async (c) => {
   return c.json(await sendTest(c.env, date, langParam(body?.lang), to));
 });
 
+/* ───────── admin: readers' questions ───────── */
+
+app.get('/api/admin/ask', async (c) => c.json(await askOverview(c.env)));
+
+app.put('/api/admin/ask', async (c) => {
+  await setAskSettings(c.env, await readBody(c));
+  return c.json(await askOverview(c.env));
+});
+
 app.all('/api/*', () => {
   throw new HttpError(404, 'not_found', 'No such API route.');
 });
@@ -363,5 +391,18 @@ export default {
     }
     else if (controller.cron === RETRY_CRON) ctx.waitUntil(retryIfFailed(env, at));
     else ctx.waitUntil(runPipeline(env, { trigger: 'cron', at }));
+  },
+  // Readers' questions, one per message (wrangler.jsonc queues). A thrown error asks the
+  // queue to retry; processQuestion marks the question failed on its last attempt.
+  async queue(batch, env) {
+    await ensureSchema(env.DB);
+    for (const message of batch.messages) {
+      try {
+        await processQuestion(env, (message.body as AskMessage).id, message.attempts);
+        message.ack();
+      } catch {
+        message.retry({ delaySeconds: 5 });
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;

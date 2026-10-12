@@ -12,9 +12,9 @@ import type { Issue, Lang } from '../../shared/issue';
 import type { Env } from '../types';
 import { now } from '../db';
 import { safeErrorText } from '../a2a';
-import { renderConfirmEmail, renderIssueEmail, UNSUBSCRIBE } from './render';
+import { ASK_KEY, renderConfirmEmail, renderIssueEmail, UNSUBSCRIBE } from './render';
 import { BATCH_SIZE, provider, sendBatch, type Mail } from './send';
-import { confirmToken, unsubscribeToken } from './tokens';
+import { askToken, confirmToken, unsubscribeToken } from './tokens';
 
 export const SEND_FROM_HOUR = 7;
 export const SEND_UNTIL_HOUR = 12;
@@ -59,16 +59,21 @@ const siteUrl = (env: Env, fallback?: string): string | null => {
   return /^https?:\/\/[^\s/]+/.test(url) ? url.replace(/\/+$/, '') : null;
 };
 
-/** One recipient's copy: their own unsubscribe link, in the body and as one-click headers. */
+/**
+ * One recipient's copy: their own unsubscribe link (in the body and as one-click headers)
+ * and their ask key on every story link.
+ */
 async function personalise(env: Env, site: string, lang: Lang, email: string, rendered: { subject: string; html: string; text: string }): Promise<Mail> {
   const token = await unsubscribeToken(env, email);
   const page = `${site}/${lang}/unsubscribe?t=${encodeURIComponent(token)}`;
   const oneClick = `${site}/api/unsubscribe?t=${encodeURIComponent(token)}`;
+  const key = encodeURIComponent(await askToken(env, email));
+  const fill = (body: string, unsubscribe: string) => body.split(UNSUBSCRIBE).join(unsubscribe).split(ASK_KEY).join(key);
   return {
     to: email,
     subject: rendered.subject,
-    html: rendered.html.split(UNSUBSCRIBE).join(page.replace(/&/g, '&amp;')),
-    text: rendered.text.split(UNSUBSCRIBE).join(page),
+    html: fill(rendered.html, page.replace(/&/g, '&amp;')),
+    text: fill(rendered.text, page),
     headers: { 'List-Unsubscribe': `<${oneClick}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
   };
 }
@@ -240,6 +245,7 @@ export async function previewIssueEmail(env: Env, date: string, lang: Lang, requ
   if (!row) return null;
   const site = siteUrl(env, requestOrigin) ?? requestOrigin;
   const rendered = renderIssueEmail(JSON.parse(row.data) as Issue, lang, site, env.EMAIL_POSTAL_ADDRESS);
-  const html = rendered.html.split(UNSUBSCRIBE).join(`${site}/${lang}/unsubscribe`);
+  // The preview is nobody's copy: no unsubscribe token and no ask key.
+  const html = rendered.html.split(UNSUBSCRIBE).join(`${site}/${lang}/unsubscribe`).split(`?k=${ASK_KEY}`).join('');
   return { subject: rendered.subject, html, bytes: new TextEncoder().encode(html).length };
 }

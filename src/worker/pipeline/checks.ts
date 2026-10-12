@@ -59,11 +59,12 @@ const ZH_SCALE: Record<string, number> = { 千: 1e3, 万: 1e4, 百万: 1e6, 千�
 
 /**
  * The values a text states, with units applied, so "$200 million" and "2 亿美元" compare
- * equal. English month names and small number words count too ("November 12" → 11, 12).
+ * equal. English month names and small number words count too ("November 12" → 11, 12),
+ * unless `words` is false.
  */
-export function quantities(value: string, lang: 'en' | 'zh'): number[] {
+export function quantities(value: string, lang: 'en' | 'zh', words = true): number[] {
   let text = plainText(value).normalize('NFKC');
-  if (lang === 'en') {
+  if (lang === 'en' && words) {
     text = text
       .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/gi, (m) => ` ${MONTH_NUMBERS[m.toLowerCase()]} `)
       .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/gi, (m) => ` ${NUMBER_WORDS[m.toLowerCase()]} `);

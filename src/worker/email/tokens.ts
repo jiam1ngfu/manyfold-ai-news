@@ -1,6 +1,7 @@
 /**
- * Signed tokens for the links in our emails: confirm a subscription, unsubscribe.
- * Nothing is stored per link; the token carries the address and an HMAC-SHA256 tag.
+ * Signed tokens for the links in our emails: confirm a subscription, unsubscribe, and the
+ * ask key a subscriber's browser keeps to ask their own questions. Nothing is stored per
+ * link; the token carries the address and an HMAC-SHA256 tag.
  *
  * The signing key is its own random value in `settings`, deliberately separate from
  * CONFIG_ENCRYPTION_KEY: an unsubscribe link in an email sent months ago must keep
@@ -15,12 +16,14 @@ const KEY_SETTING = 'link_signing_key';
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export type TokenKind = 'confirm' | 'unsubscribe';
+export type TokenKind = 'confirm' | 'unsubscribe' | 'ask';
+
+const CODE: Record<TokenKind, string> = { confirm: 'c', unsubscribe: 'u', ask: 'a' };
 
 export interface TokenPayload {
   kind: TokenKind;
   email: string;
-  /** Expiry, seconds since the epoch. Unsubscribe links never expire. */
+  /** Expiry, seconds since the epoch. Unsubscribe links and ask keys never expire. */
   exp?: number;
 }
 
@@ -57,7 +60,7 @@ const tag = async (key: CryptoKey, body: string): Promise<string> =>
   b64url(new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(body))).slice(0, 16));
 
 export async function signWith(key: CryptoKey, payload: TokenPayload): Promise<string> {
-  const body = b64url(enc.encode(JSON.stringify({ k: payload.kind === 'confirm' ? 'c' : 'u', e: payload.email, ...(payload.exp ? { x: payload.exp } : {}) })));
+  const body = b64url(enc.encode(JSON.stringify({ k: CODE[payload.kind], e: payload.email, ...(payload.exp ? { x: payload.exp } : {}) })));
   return `${body}.${await tag(key, body)}`;
 }
 
@@ -68,7 +71,7 @@ export async function verifyWith(key: CryptoKey, token: string, kind: TokenKind,
   if (!safeEqual(await tag(key, body), sig)) return null;
   try {
     const data = JSON.parse(dec.decode(fromB64url(body))) as { k?: string; e?: unknown; x?: unknown };
-    if (data.k !== (kind === 'confirm' ? 'c' : 'u') || typeof data.e !== 'string') return null;
+    if (data.k !== CODE[kind] || typeof data.e !== 'string') return null;
     if (typeof data.x === 'number' && data.x * 1000 < now) return null;
     return data.e;
   } catch {
@@ -82,5 +85,8 @@ export const confirmToken = async (env: Env, email: string): Promise<string> =>
   signWith(await signingKey(env), { kind: 'confirm', email, exp: Math.floor(Date.now() / 1000) + CONFIRM_DAYS * 86400 });
 
 export const unsubscribeToken = async (env: Env, email: string): Promise<string> => signWith(await signingKey(env), { kind: 'unsubscribe', email });
+
+/** Lets a confirmed subscriber's browser ask questions; checked against their status on every use. */
+export const askToken = async (env: Env, email: string): Promise<string> => signWith(await signingKey(env), { kind: 'ask', email });
 
 export const verifyToken = async (env: Env, token: string, kind: TokenKind): Promise<string | null> => verifyWith(await signingKey(env), token, kind);

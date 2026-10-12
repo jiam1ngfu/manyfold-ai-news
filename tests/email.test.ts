@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { importSigningKey, signWith, verifyWith } from '../src/worker/email/tokens';
 import { dueByDate, localClock } from '../src/worker/email/deliver';
-import { renderConfirmEmail, renderIssueEmail, UNSUBSCRIBE } from '../src/worker/email/render';
+import { ASK_KEY, renderConfirmEmail, renderIssueEmail, UNSUBSCRIBE } from '../src/worker/email/render';
 import { SAMPLE_ISSUE } from '../src/worker/sample-issue';
 import { validateIssue, type Issue } from '../src/shared/issue';
 
@@ -60,7 +60,7 @@ describe('issue email', () => {
     for (const lang of ['en', 'zh'] as const) {
       const email = renderIssueEmail(SAMPLE_ISSUE, lang, site, 'AI in 5, 1 Example Street');
       expect(email.html).toContain('background:#FFE45C');
-      expect(email.html).toContain(`${site}/${lang}/${SAMPLE_ISSUE.date}/1#ask`);
+      expect(email.html).toContain(`${site}/${lang}/${SAMPLE_ISSUE.date}/1?k=${ASK_KEY}#ask`);
       expect(email.html).toContain(UNSUBSCRIBE);
       expect(email.text).toContain(UNSUBSCRIBE);
       expect(email.html).toContain('1 Example Street');

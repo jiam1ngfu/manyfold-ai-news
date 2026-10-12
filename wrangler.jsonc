@@ -29,6 +29,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  // Readers' own questions wait here for the answer agent: an agent turn can outlast what a
+  // request may keep running after it responds. Create once: npx wrangler queues create aiin5-ask
+  "queues": {
+    "producers": [{ "binding": "ASK_QUEUE", "queue": "aiin5-ask" }],
+    "consumers": [{ "queue": "aiin5-ask", "max_batch_size": 1, "max_retries": 2 }]
+  },
   "d1_databases": [
     {
       "binding": "DB",

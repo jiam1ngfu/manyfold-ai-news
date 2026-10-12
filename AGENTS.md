@@ -44,10 +44,12 @@ The template is designed to be extended and reshaped; these are the load-bearing
    `/api/state` and the reader routes without a reason as good as theirs. The reader routes
    are the public site itself (`isReaderRoute` in `src/worker/index.ts`): `GET /api/issues*`
    serves published issues only (read-only, cacheable, no agent calls, no credentials), and
-   `POST /api/subscribe`, `/api/subscribe/confirm`, `/api/unsubscribe`, `/api/feedback` and
-   `/api/reports` validate strictly and are throttled per salted IP hash. A reader route must
-   never call an agent or touch a secret, with one exception: `/api/subscribe` uses the mail
-   provider key to send a rate-limited confirmation to the address just submitted.
+   `POST /api/subscribe`, `/api/subscribe/confirm`, `/api/unsubscribe`, `/api/ask`,
+   `/api/feedback` and `/api/reports` (and `GET /api/ask/:id`) validate strictly and are
+   throttled per salted IP hash. A reader route must never call an agent or touch a
+   secret itself, with two exceptions: `/api/subscribe` uses the mail provider key to send
+   a rate-limited confirmation to the address just submitted, and `/api/ask` queues a
+   confirmed subscriber's question for the answer agent (rule 12).
    `/api/unsubscribe` is also the only mutation exempt from the same-origin check, because
    mail providers send the one-click List-Unsubscribe POST from their own servers; it acts
    only on the signed token in its URL.
@@ -79,6 +81,16 @@ The template is designed to be extended and reshaped; these are the load-bearing
     every email already sent stop working. Subscriber addresses are personal data: never
     log them and never return them from an API, admin routes included (counts only). A
     recipient is claimed in `email_log` before each send so nobody gets a second copy.
+12. **Readers' questions are untrusted input, answered from the sources only.**
+    `src/worker/ask/` sends a confirmed subscriber's question (ask key, re-checked against
+    `subscribers` on every use) to a third agent, never the writer or reviewer, that runs
+    in its own sandbox with every tool denied. Each question is one billed turn whose
+    `messageId` derives from its `questions.id`, in a fresh context, with no reader address
+    in the prompt. `verifyAnswer` decides what a reader sees: every sentence must cite a
+    quote found verbatim in the story's sources, its values must be in those quotes, and
+    anything shaped like a link, markup or a credential is dropped. "Not covered" is fixed
+    copy, never model text. Keep the per-reader and site-wide daily limits, the cache, and
+    the pause switch in /admin#questions.
 
 ## Checks
 

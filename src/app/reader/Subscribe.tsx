@@ -3,7 +3,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import type { Lang } from '../../shared/issue';
 import { COPY } from './i18n';
-import { subscribe, useSubscribed } from './data';
+import { askKey, subscribe, useSubscribed } from './data';
 
 export default function SubscribeForm({
   lang,
@@ -39,7 +39,8 @@ export default function SubscribeForm({
     return (
       <div className={className}>
         <p className="fine ok" role="status">
-          {T.subDone}
+          {/* Only a confirmed subscriber's browser holds an ask key. */}
+          {state === 'idle' && askKey() ? T.subConfirmed : T.subDone}
         </p>
       </div>
     );

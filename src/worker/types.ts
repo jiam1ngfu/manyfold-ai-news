@@ -26,6 +26,9 @@ export interface Env {
   RESEND_API_KEY?: string;
   /** Optional postal address for the email footer (CAN-SPAM). */
   EMAIL_POSTAL_ADDRESS?: string;
+
+  /** Readers' questions wait here for the answer agent (wrangler.jsonc queues). */
+  ASK_QUEUE?: Queue<{ id: string }>;
 }
 
 /** Everything needed to talk to one agent over A2A. */

@@ -11,7 +11,7 @@
 import { LANGS, type Lang } from '../shared/issue';
 import { HttpError, type Env } from './types';
 import { getSetting, now, setSettingIfAbsent } from './db';
-import { verifyToken } from './email/tokens';
+import { askToken, verifyToken } from './email/tokens';
 
 type Body = Record<string, unknown> | null;
 
@@ -32,7 +32,7 @@ export async function clientKey(env: Env, ip: string | undefined): Promise<strin
 }
 
 /** At most `limit` requests per client per hour for this bucket. */
-async function throttle(env: Env, bucket: string, client: string, limit: number): Promise<void> {
+export async function throttle(env: Env, bucket: string, client: string, limit: number): Promise<void> {
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM rate_events WHERE bucket = ? AND client = ? AND created_at > ?')
     .bind(bucket, client, since)
@@ -90,14 +90,14 @@ const token = (body: Body, query?: string | null): string => {
   return value;
 };
 
-/** The link in the confirmation email. */
-export async function confirmSubscription(env: Env, body: Body, client: string): Promise<{ lang: Lang }> {
+/** The link in the confirmation email. Hands this browser its ask key. */
+export async function confirmSubscription(env: Env, body: Body, client: string): Promise<{ lang: Lang; askKey: string }> {
   await throttle(env, 'confirm', client, 30);
   const email = await verifyToken(env, token(body), 'confirm');
   if (!email) throw new HttpError(400, 'invalid_link', 'This confirmation link is invalid or has expired. Subscribe again to get a new one.');
   const row = await env.DB.prepare("UPDATE subscribers SET status = 'confirmed', updated_at = ? WHERE email = ? RETURNING lang").bind(now(), email).first<{ lang: Lang }>();
   if (!row) throw new HttpError(400, 'invalid_link', 'This address is not on the list any more. Subscribe again.');
-  return { lang: row.lang };
+  return { lang: row.lang, askKey: await askToken(env, email) };
 }
 
 /** The unsubscribe link and the one-click List-Unsubscribe header. Always succeeds for a valid link. */
@@ -120,7 +120,7 @@ export async function recordFeedback(env: Env, body: Body, client: string): Prom
 export async function recordReport(env: Env, body: Body, client: string): Promise<void> {
   const date = issueDate(body?.date);
   const storyId = typeof body?.storyId === 'string' && /^[a-z0-9-]{1,60}$/.test(body.storyId) ? body.storyId : null;
-  const target = typeof body?.target === 'string' && /^(story|answer|proof)(:\d{1,2})?$/.test(body.target) ? body.target : null;
+  const target = typeof body?.target === 'string' && /^((story|answer|proof)(:\d{1,2})?|own:[0-9a-f]{32})$/.test(body.target) ? body.target : null;
   if (!storyId || !target) throw new HttpError(400, 'bad_request', 'storyId and target are required.');
   await assertPublished(env, date);
   await throttle(env, 'report', client, 20);

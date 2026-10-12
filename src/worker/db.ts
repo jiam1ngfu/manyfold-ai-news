@@ -178,6 +178,31 @@ CREATE TABLE IF NOT EXISTS email_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_email_log_ref ON email_log (kind, ref, status);
+
+-- Readers' own questions (src/worker/ask). id seeds the A2A messageId of its one turn.
+-- asker is a salted hash of the subscriber's address, never the address itself.
+-- status: queued, answering, answered, partial, none or failed. answer is the checked
+-- answer JSON. cached_from points at the row whose answer was reused, costing nothing.
+CREATE TABLE IF NOT EXISTS questions (
+  id          TEXT PRIMARY KEY,
+  issue_date  TEXT NOT NULL,
+  story_id    TEXT NOT NULL,
+  lang        TEXT NOT NULL,
+  question    TEXT NOT NULL,
+  norm        TEXT NOT NULL,
+  asker       TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  answer      TEXT,
+  dropped     INTEGER NOT NULL DEFAULT 0,
+  cached_from TEXT,
+  error       TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_questions_cache ON questions (issue_date, story_id, lang, norm);
+CREATE INDEX IF NOT EXISTS idx_questions_asker ON questions (asker, created_at);
+CREATE INDEX IF NOT EXISTS idx_questions_created ON questions (created_at);
 `;
 
 /**

@@ -1,5 +1,5 @@
 /**
- * One pipeline turn with the writer or review agent over A2A message/stream. Each turn is a
+ * One turn with an agent (writer, reviewer or answerer) over A2A message/stream. Each turn is a
  * billed call, so the messageId is derived from the stored run row and the step name:
  * a retried send of the same step can never bill twice.
  */
@@ -9,9 +9,9 @@ import type { AgentCredential } from '../types';
 
 const TURN_TIMEOUT_MS = 8 * 60 * 1000;
 
-export async function agentTurn(cred: AgentCredential, messageId: string, text: string): Promise<string> {
+export async function agentTurn(cred: AgentCredential, messageId: string, text: string, timeoutMs = TURN_TIMEOUT_MS): Promise<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const snapshot = await consumeA2AStream({
       cred,

@@ -5,12 +5,14 @@
  * tables only, a plain-text twin, and well under Gmail's ~100 KB clipping limit.
  *
  * Issue text is escaped everywhere; marks and citations are tokens, never HTML. Each
- * recipient's unsubscribe link replaces the UNSUBSCRIBE placeholder after rendering.
+ * recipient's unsubscribe link and ask key replace the UNSUBSCRIBE and ASK_KEY
+ * placeholders after rendering: opening any story from the email lets that browser ask.
  */
 
 import { readingMinutes, tokenize, type Issue, type L10n, type Lang, type RegionKey, type Story } from '../../shared/issue';
 
 export const UNSUBSCRIBE = '%%UNSUBSCRIBE_URL%%';
+export const ASK_KEY = '%%ASK_KEY%%';
 
 export interface RenderedEmail {
   subject: string;
@@ -131,7 +133,7 @@ export function renderIssueEmail(issue: Issue, lang: Lang, site: string, postalA
   const other: Lang = lang === 'en' ? 'zh' : 'en';
   const base = site.replace(/\/+$/, '');
   const issueUrl = `${base}/${lang}/${issue.date}`;
-  const storyUrl = (i: number) => `${issueUrl}/${i + 1}`;
+  const storyUrl = (i: number) => `${issueUrl}/${i + 1}?k=${ASK_KEY}`;
   const d = dateLine(issue.date, lang);
   const dek = t.dek(d.weekday, issue.stories.length + issue.briefs.length, readingMinutes(issue, lang));
   const indexOf = new Map(issue.stories.map((s, i) => [s.id, i]));

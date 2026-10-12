@@ -186,7 +186,22 @@ function CiteList({ story, cites, lang, citeKey }: { story: Story; cites: Quote[
   );
 }
 
-export function Answer({ issue, story, preset, index, lang }: { issue: Issue; story: Story; preset: AskPreset; index: number; lang: Lang }) {
+/** A checked answer: a preset one, or (with reportTarget "own:<id>") a reader's own. */
+export function Answer({
+  issue,
+  story,
+  preset,
+  index,
+  lang,
+  reportTarget,
+}: {
+  issue: Issue;
+  story: Story;
+  preset: AskPreset;
+  index: number | string;
+  lang: Lang;
+  reportTarget?: string;
+}) {
   const T = COPY[lang];
   const citeKey = `c-${story.id}-${index}`;
   return (
@@ -200,7 +215,7 @@ export function Answer({ issue, story, preset, index, lang }: { issue: Issue; st
       </p>
       <CiteList story={story} cites={preset.cites} lang={lang} citeKey={citeKey} />
       <p className="answer-foot">
-        {T.answerFoot} <ReportButton issue={issue} story={story} target={`answer:${index}`} lang={lang} />
+        {T.answerFoot} <ReportButton issue={issue} story={story} target={reportTarget ?? `answer:${index}`} lang={lang} />
       </p>
     </div>
   );
