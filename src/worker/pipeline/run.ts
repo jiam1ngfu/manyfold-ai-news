@@ -88,15 +88,21 @@ export async function reviewerAgentId(env: Env): Promise<string | null> {
 
 export const setReviewerAgent = (env: Env, agentId: string) => setSetting(env, REVIEWER_AGENT_KEY, agentId);
 
-async function recentUrls(env: Env, issueDate: string): Promise<Set<string>> {
+/** What the last 7 days of issues already covered: their source URLs and headlines. */
+async function recentCoverage(env: Env, issueDate: string): Promise<{ urls: Set<string>; headlines: string[] }> {
   const since = new Date(Date.parse(`${issueDate}T00:00:00Z`) - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { results } = await env.DB.prepare('SELECT data FROM issues WHERE date >= ? AND date < ?').bind(since, issueDate).all<{ data: string }>();
   const urls = new Set<string>();
+  const headlines: string[] = [];
   for (const row of results) {
-    const issue = JSON.parse(row.data) as { stories: { sources: { url: string }[] }[] };
-    issue.stories.forEach((s) => s.sources.forEach((src) => urls.add(src.url)));
+    const issue = JSON.parse(row.data) as { stories: { title: { en: string }; sources: { url: string }[] }[]; briefs?: { text: { en: string } }[] };
+    issue.stories.forEach((s) => {
+      headlines.push(s.title.en);
+      s.sources.forEach((src) => urls.add(src.url));
+    });
+    issue.briefs?.forEach((b) => headlines.push(b.text.en));
   }
-  return urls;
+  return { urls, headlines };
 }
 
 async function nextNumber(env: Env, issueDate: string): Promise<number> {
@@ -112,7 +118,24 @@ async function finish(env: Env, runId: string, status: 'drafted' | 'failed', rep
     .run();
 }
 
-export async function runPipeline(env: Env, options: { trigger: 'cron' | 'manual'; at?: Date; issueDate?: string }): Promise<{ runId: string; status: 'drafted' | 'failed'; report: RunReport }> {
+export const RETRY_CRON = '30 20 * * *';
+
+/**
+ * The backup trigger an hour after the daily one: it runs again only when the day's issue
+ * has no draft yet and its last run failed (or never started). One retry a day at most.
+ */
+export async function retryIfFailed(env: Env, at: Date): Promise<void> {
+  await ensureSchema(env.DB);
+  const issueDate = issueDateFor(at);
+  if (await env.DB.prepare('SELECT 1 FROM issues WHERE date = ?').bind(issueDate).first()) return;
+  const last = await env.DB.prepare('SELECT status FROM pipeline_runs WHERE issue_date = ? ORDER BY started_at DESC LIMIT 1')
+    .bind(issueDate)
+    .first<{ status: string }>();
+  if (last && last.status !== 'failed') return;
+  await runPipeline(env, { trigger: 'retry', at });
+}
+
+export async function runPipeline(env: Env, options: { trigger: 'cron' | 'retry' | 'manual'; at?: Date; issueDate?: string }): Promise<{ runId: string; status: 'drafted' | 'failed'; report: RunReport }> {
   await ensureSchema(env.DB);
   const at = options.at ?? new Date();
   const started = Date.now();
@@ -158,14 +181,17 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'manual
 
     // 1. Collect candidates from the feeds.
     report.step = 'collecting';
-    const { candidates, feeds } = await collectCandidates(window);
-    report.feeds = feeds;
+    const collected = await collectCandidates(window);
+    report.feeds = collected.feeds;
+    // Feed windows overlap by design, so drop what the last week already ran before picking.
+    const covered = await recentCoverage(env, issueDate);
+    const candidates = collected.candidates.filter((c) => !covered.urls.has(c.link));
     report.candidates = candidates.length;
     if (candidates.length === 0) throw new Error('No candidate stories in the window.');
 
     // 2. The agent picks (billed turn 1).
     report.step = 'picking';
-    const picked = extractJson(await agentTurn(cred, `aiin5-${runId}-pick`, selectPrompt(issueDate, candidates))) as { items?: unknown[] };
+    const picked = extractJson(await agentTurn(cred, `aiin5-${runId}-pick`, selectPrompt(issueDate, candidates, covered.headlines))) as { items?: unknown[] };
     const byId = new Map(candidates.map((c) => [c.id, c]));
     const items = (Array.isArray(picked.items) ? picked.items : [])
       .slice(0, 10)
@@ -220,14 +246,14 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'manual
     report.step = 'checking';
     const texts = new Map<string, Snapshot>();
     snapshots.forEach((s, url) => texts.set(url, s));
-    const checked = checkDraft(draft, texts, await recentUrls(env, issueDate));
+    const checked = checkDraft(draft, texts, covered.urls);
     report.checks = checked.checks;
     if (checked.draft.stories.length < MIN_STORIES) throw new Error(`Only ${checked.draft.stories.length} stories passed the checks; at least ${MIN_STORIES} are needed.`);
 
     // 6. Check 2: the review agent judges the checked draft against the sources (billed
     // turn 3, on the reviewer); its fixes go through check 1 again.
     report.step = 'reviewing';
-    const verdicts = readReview(extractJson(await agentTurn(reviewerCred, `aiin5-${runId}-review`, reviewPrompt(issueDate, checked.draft, texts))));
+    const verdicts = readReview(extractJson(await agentTurn(reviewerCred, `aiin5-${runId}-review`, reviewPrompt(issueDate, checked.draft, texts, covered.headlines))));
     const reviewed = applyReview(checked.draft, verdicts, texts, reviewerCred.label);
     report.review = reviewed.review;
     if (reviewed.draft.stories.length < MIN_STORIES) throw new Error(`Only ${reviewed.draft.stories.length} stories passed the review; at least ${MIN_STORIES} are needed.`);

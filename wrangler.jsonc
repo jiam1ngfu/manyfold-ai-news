@@ -14,10 +14,11 @@
   "observability": {
     "enabled": true
   },
-  // Daily pipeline: 19:30 UTC, so the issue is ready before the first readers' 7:00.
+  // Daily pipeline: 19:30 UTC, so the issue is ready before the first readers' 7:00, and
+  // 20:30 UTC, which runs again only if the day's run failed (src/worker/pipeline/run.ts).
   // It only saves drafts; nothing is published without the owner (see /admin, Issues).
   "triggers": {
-    "crons": ["30 19 * * *"]
+    "crons": ["30 19 * * *", "30 20 * * *"]
   },
   "upload_source_maps": true,
   "assets": {

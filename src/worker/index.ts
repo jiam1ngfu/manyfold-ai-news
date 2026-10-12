@@ -30,7 +30,8 @@
  *   GET    /api/admin/pipeline/runs/:id     admin  one run report
  *   POST   /api/admin/pipeline/run          admin  run the pipeline now (billed; needs confirm)
  *
- * The scheduled handler runs the pipeline daily at 19:30 UTC; it only saves drafts.
+ * The scheduled handler runs the pipeline daily at 19:30 UTC, and again at 20:30 UTC only if
+ * that run failed; it only saves drafts.
  *
  * "admin" routes require the x-admin-password header — but only when the
  * ADMIN_PASSWORD secret is set. Without it the app is open, which is what makes
@@ -55,7 +56,7 @@ import {
 import { getConversation, handleChatTurn, resetConversation } from './chat';
 import { IssueValidationError } from '../shared/issue';
 import { getAnyIssue, getIssue, getLatestIssue, listAllIssues, listIssues, saveIssue, seedSampleIssue, setIssueStatus } from './issues';
-import { checkSources, getRun, listRuns, reviewerAgentId, runPipeline, setReviewerAgent, setWriterAgent, writerAgentId } from './pipeline/run';
+import { RETRY_CRON, checkSources, getRun, listRuns, retryIfFailed, reviewerAgentId, runPipeline, setReviewerAgent, setWriterAgent, writerAgentId } from './pipeline/run';
 import { clientKey, recordFeedback, recordReport, subscribe } from './public';
 
 const SERVICE = 'cloudflare-worker-starter';
@@ -308,8 +309,9 @@ app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default {
   fetch: app.fetch,
-  // The daily pipeline (wrangler.jsonc triggers.crons). It only ever saves drafts.
+  // The daily pipeline and its one retry (wrangler.jsonc triggers.crons). Drafts only.
   scheduled(controller, env, ctx) {
-    ctx.waitUntil(runPipeline(env, { trigger: 'cron', at: new Date(controller.scheduledTime) }));
+    const at = new Date(controller.scheduledTime);
+    ctx.waitUntil(controller.cron === RETRY_CRON ? retryIfFailed(env, at) : runPipeline(env, { trigger: 'cron', at }));
   },
 } satisfies ExportedHandler<Env>;

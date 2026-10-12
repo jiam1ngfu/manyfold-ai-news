@@ -55,10 +55,11 @@ The template is designed to be extended and reshaped; these are the load-bearing
    reached by URL only and loads its own chunk and stylesheet (`src/app/App.tsx`,
    `styles.css`); the reader (`src/app/reader/`) follows `docs/design/` and never links to it.
 10. **The pipeline only writes drafts, and it bills.** `src/worker/pipeline/` runs daily
-    from the cron trigger (19:30 UTC) and on demand from `/admin#issues`. Each run makes
-    four billed agent turns (pick, write and translate on the writer, review on the
-    reviewer) whose `messageId`s derive from the stored `pipeline_runs.id`, so a retried
-    step cannot bill twice; a manual run must send `{"confirm": true}`. It never
+    from the cron trigger (19:30 UTC, one retry at 20:30 only if that run failed) and on
+    demand from `/admin#issues`. Each run makes four billed agent turns (pick, write and
+    translate on the writer, review on the reviewer) whose `messageId`s derive from the
+    stored `pipeline_runs.id`, so a retried step cannot bill twice; a manual run must send
+    `{"confirm": true}`. It never
     publishes: the owner publishes from /admin. Check 1 (`checks.ts`, code only) must keep
     rejecting any quote not found in the fetched source and any number not in the
     sources. Check 2 (`review.ts`) must stay a different agent from the writer, fail

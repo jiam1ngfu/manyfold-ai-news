@@ -12,7 +12,7 @@ import type { Draft } from './draft';
 
 const json = (value: unknown) => JSON.stringify(value);
 
-export function selectPrompt(issueDate: string, candidates: Candidate[]): string {
+export function selectPrompt(issueDate: string, candidates: Candidate[], covered: string[] = []): string {
   const list = candidates.map((c) => ({
     id: c.id,
     source: c.sourceName.en,
@@ -34,9 +34,13 @@ Rules:
 - One item per event. If several candidates report the same event, list all their ids in one item. When an official candidate (kind "official") covers the event, always include it, first.
 - Prefer official announcements and first-hand sources. A rumor (unconfirmed report) can only be a brief.
 - When an important event has no official candidate, you may open the company's own newsroom or blog to find the official announcement and add its exact URL in "extraUrls" (up to 2 per item). Only add pages you have opened and confirmed cover the same event. Never guess a URL: every one is fetched and checked, and a wrong one wastes the slot.
+- Do not pick an event that is already in "Covered in the last 7 days" below, even from a different outlet, unless there is a significant new development; then the item is about that development.
 
 Reply with JSON only, no prose:
 {"items":[{"type":"story"|"brief","candidates":["c3","c9"],"extraUrls":[],"reason":"one short sentence"}]}
+
+Covered in the last 7 days:
+${json(covered.slice(0, 80))}
 
 Candidates:
 ${json(list)}`;
@@ -116,7 +120,7 @@ ${json(material)}`;
 const REVIEW_SOURCE_CHARS = 6000;
 
 /** Check 2: the review agent reads the checked draft beside its sources. Ids match review.ts. */
-export function reviewPrompt(issueDate: string, draft: Draft, sources: Map<string, SourceText & { title?: string }>): string {
+export function reviewPrompt(issueDate: string, draft: Draft, sources: Map<string, SourceText & { title?: string }>, covered: string[] = []): string {
   const source = (url: string) => {
     const s = sources.get(url);
     return s ? { title: s.title ?? '', text: s.text.slice(0, REVIEW_SOURCE_CHARS) } : { title: '', text: '(could not be read)' };
@@ -153,7 +157,7 @@ Check each item for:
 - Attribution: a company's own claims are stated as its claims ("says", "announced"); media reports are marked ("according to", "reportedly"); unconfirmed reports are marked as rumors and are never stated as fact.
 - Overreach: the headline, "why" and "next" may not claim more than the sources do. A consequence presented as fact must follow from the sources; a guess is a problem.
 - Freshness: the news must be new for ${issueDate} (see "published"). An old event dressed as new is a problem.
-- Fit: AI news, not a promotion, an event listing or an opinion piece without news, and not the same event as another item.
+- Fit: AI news, not a promotion, an event listing or an opinion piece without news, not the same event as another item, and not an event already in "Covered in the last 7 days" below unless the item is about a significant new development.
 - Questions: each answer must be supported by its citations, and "status" must be honest ("answered", "partial", "none").
 - Charts: title, labels and note must describe the numbers correctly; say in the note when a figure is the company's own estimate.
 - "today": the one-line summary of the story must be accurate too.
@@ -174,6 +178,9 @@ Give a verdict for EVERY item id below; an item without a verdict is cut. "probl
 
 Reply with JSON only, no prose:
 {"top":null,"items":[{"id":"…","verdict":"pass"|"fix"|"cut","problems":["…"],"fix":{"summary":"…"},"remove":["chart"]}]}
+
+Covered in the last 7 days:
+${json(covered.slice(0, 80))}
 
 Stories:
 ${json(stories)}

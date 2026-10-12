@@ -247,7 +247,7 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
     <section className="panel">
       <h2>Issues</h2>
       <p className="muted">
-        The pipeline runs every day at 19:30 UTC and saves a <strong>draft</strong>. Read the draft, check the run report, then publish it. Nothing reaches readers until you do.
+        The pipeline runs every day at 19:30 UTC (and retries once at 20:30 if that fails) and saves a <strong>draft</strong>. Read the draft, check the run report, then publish it. Nothing reaches readers until you do.
       </p>
 
       <h3>Agents</h3>

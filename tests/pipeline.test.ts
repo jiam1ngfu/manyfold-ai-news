@@ -6,7 +6,7 @@ import { extractJson, readDraft, repairMarkers, type DraftStory } from '../src/w
 import { assembleIssue, checkTranslation, sourceLine, translationEntries } from '../src/worker/pipeline/assemble';
 import { issueDateFor, windowFor } from '../src/worker/pipeline/run';
 import { applyReview, readReview } from '../src/worker/pipeline/review';
-import { reviewPrompt } from '../src/worker/pipeline/prompts';
+import { reviewPrompt, selectPrompt } from '../src/worker/pipeline/prompts';
 import { validateIssue } from '../src/shared/issue';
 
 const SOURCE_EN =
@@ -136,7 +136,7 @@ describe('check 1: checkStory', () => {
     expect(kept?.questions).toHaveLength(1);
   });
 
-  it('removes a highlight whose quote does not contain its number, and keeps the story', () => {
+  it('removes a highlight no quote states, and keeps the story', () => {
     const swapped = story({
       marks: [
         { source: 0, quote: 'Running cost is about one-eighth that of comparable closed models' },
@@ -146,7 +146,15 @@ describe('check 1: checkStory', () => {
     const { check, story: kept } = checkStory(swapped, sources);
     expect(check.kept).toBe(true);
     expect(kept?.summary).toBe('Q3 costs <m0>one-eighth</m0> as much to run and scores within 3 points of closed models.');
-    expect(check.warnings.join(' ')).toContain('Highlight 1 ("3 points") removed');
+    expect(check.warnings.join(' ')).toContain('Highlight "3 points" removed: no quote states it.');
+  });
+
+  it('moves a mis-numbered highlight to the quote that states it, as writers sometimes slip', () => {
+    const slipped = story({ summary: 'Q3 costs <m1>one-eighth</m1> as much to run and scores within <m2>3 points</m2> of closed models.' });
+    const { check, story: kept } = checkStory(slipped, sources);
+    expect(check.kept).toBe(true);
+    expect(kept?.summary).toBe('Q3 costs <m0>one-eighth</m0> as much to run and scores within <m1>3 points</m1> of closed models.');
+    expect(check.warnings).toHaveLength(2);
   });
 
   it('drops a story with an invented number', () => {
@@ -275,7 +283,8 @@ describe('check 2: review', () => {
   });
 
   it('gives the reviewer every item id with its source text', () => {
-    const prompt = reviewPrompt('2026-10-12', makeDraft(), sources);
+    const prompt = reviewPrompt('2026-10-12', makeDraft(), sources, ['Anthropic cuts internet access for internal agent evaluations']);
+    expect(prompt).toContain('Anthropic cuts internet access for internal agent evaluations');
     for (const id of ['"id":"a"', '"id":"b"', '"id":"c"', '"id":"brief-1"', '"id":"brief-2"']) expect(prompt).toContain(id);
     expect(prompt).toContain('Running cost is about one-eighth');
   });
@@ -284,6 +293,14 @@ describe('check 2: review', () => {
 describe('agent output', () => {
   it('extracts JSON from a fenced reply', () => {
     expect(extractJson('Here you go:\n```json\n{"items":[1]}\n```')).toEqual({ items: [1] });
+  });
+
+  it('repairs a typo in the JSON instead of losing the turn', () => {
+    // The 2026-10-12 run failed on exactly this: a stray quote after a number.
+    const raw = '{"stories":[{"title":"T","summary":"S","lon":-122.12,"lat":47.674"}],"briefs":[],"today":[]}';
+    const draft = readDraft(extractJson(raw));
+    expect(draft.stories[0].lat).toBe(47.674);
+    expect(() => extractJson('no json here')).toThrow('did not return a JSON object');
   });
 
   it('repairs a closing marker missing its ">" or "/", and nothing else', () => {
@@ -347,6 +364,14 @@ describe('check 3 and assembly', () => {
     expect(issue.stories[0].summary.zh).toContain('<m0>');
     expect(issue.stories[0].marks[0].tr?.zh).toBeTruthy();
     expect(issue.stories[0].ask[0].cites[1].tr?.en).toBe('The full model needs 8 80GB GPUs');
+  });
+});
+
+describe('picking', () => {
+  it('tells the picker what the last week covered', () => {
+    const prompt = selectPrompt('2026-10-11', [], ['OpenAI releases nearly 400 AI-generated math results']);
+    expect(prompt).toContain('Covered in the last 7 days');
+    expect(prompt).toContain('OpenAI releases nearly 400 AI-generated math results');
   });
 });
 

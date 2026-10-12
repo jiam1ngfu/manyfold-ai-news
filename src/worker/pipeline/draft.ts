@@ -3,6 +3,7 @@
  * coerces whatever came back into it. Nothing here decides truth; checks.ts does.
  */
 
+import { jsonrepair } from 'jsonrepair';
 import type { AnswerStatus, RegionKey, SourceKind } from '../../shared/issue';
 
 export interface DraftSource {
@@ -87,7 +88,10 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 const optText = (v: unknown): string | null => text(v) || null;
 const int = (v: unknown, fallback = -1): number => (typeof v === 'number' && Number.isInteger(v) ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : fallback);
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const num = (v: unknown): number | null => {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
 const pick = <T extends string>(v: unknown, options: readonly T[], fallback: T): T => (typeof v === 'string' && options.includes(v as T) ? (v as T) : fallback);
 
 const REGIONS: readonly RegionKey[] = ['us', 'cn', 'eu', 'jp', 'other'];
@@ -114,14 +118,27 @@ export function repairMarkers(value: string): string {
   return value.replace(/<\/m(\d+)(?![\d>])/g, '</m$1>').replace(/<m(\d+)>([^<]*?)<m\1>/g, '<m$1>$2</m$1>');
 }
 
-/** Strips a ```json fence or surrounding prose and parses the first JSON object. */
+/**
+ * Strips a ```json fence or surrounding prose and parses the first JSON object. A model
+ * typo (a stray quote, a trailing comma) is repaired rather than losing a billed turn;
+ * whatever comes out still goes through every check, so a bad repair can only cut.
+ */
 export function extractJson(raw: string): unknown {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = fenced ? fenced[1] : raw;
   const start = body.indexOf('{');
   const end = body.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('The agent did not return a JSON object.');
-  return JSON.parse(body.slice(start, end + 1));
+  const json = body.slice(start, end + 1);
+  try {
+    return JSON.parse(json);
+  } catch (error) {
+    try {
+      return JSON.parse(jsonrepair(json));
+    } catch {
+      throw error;
+    }
+  }
 }
 
 export function readDraft(raw: unknown): Draft {

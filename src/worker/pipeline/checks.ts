@@ -132,9 +132,6 @@ export function checkStory(story: DraftStory, sources: Map<string, SourceText>):
   markOk.forEach((ok, i) => {
     if (!ok) reasons.push(`Quote for mark ${i} is not in source ${story.marks[i].source + 1}.`);
   });
-  for (const t of tokenize(story.summary)) {
-    if (t.type === 'mark' && !story.marks[t.index]) reasons.push(`Summary uses <m${t.index}> but there is no such mark.`);
-  }
 
   // Numbers: every number must appear in a source, or in the translation of a quote
   // that was itself found in its source (sources in other languages write numbers differently).
@@ -157,13 +154,26 @@ export function checkStory(story: DraftStory, sources: Map<string, SourceText>):
 
   if (reasons.length > 0) return { check: check(false), story: null };
 
-  // A highlight is the reader's proof, so its quote must state that very number. A mark
-  // pointing at the wrong quote loses its highlight; the number itself already passed above.
+  // A highlight is the reader's proof, so its quote must state that very value. Writers
+  // sometimes number highlights wrong; a highlight is pointed at the verified quote that
+  // does state it, or loses its highlight. The value itself already passed the number check.
+  const proves = (i: number, inner: string): boolean => {
+    const m = story.marks[i];
+    if (!m || !markOk[i]) return false;
+    const said = [m.quote, m.translation ?? ''];
+    const numbers = numbersIn(inner);
+    if (numbers.length === 0) return said.some((q) => canonical(q).includes(canonical(plainText(inner))));
+    const proof = new Set(said.flatMap(numbersIn));
+    return numbers.every((n) => proof.has(n));
+  };
   const summary = story.summary.replace(/<m(\d+)>(.*?)<\/m\1>/g, (whole, index: string, inner: string) => {
-    const mark = story.marks[Number(index)];
-    const proof = new Set([...numbersIn(mark.quote), ...(mark.translation ? numbersIn(mark.translation) : [])]);
-    if (numbersIn(inner).every((n) => proof.has(n))) return whole;
-    warnings.push(`Highlight ${index} ("${inner}") removed: its quote does not contain that number.`);
+    if (proves(Number(index), inner)) return whole;
+    const other = story.marks.findIndex((_, i) => proves(i, inner));
+    if (other >= 0) {
+      warnings.push(`Highlight "${inner}" pointed at quote ${Number(index) + 1}; moved to quote ${other + 1}, which states it.`);
+      return `<m${other}>${inner}</m${other}>`;
+    }
+    warnings.push(`Highlight "${inner}" removed: no quote states it.`);
     return inner;
   });
 
