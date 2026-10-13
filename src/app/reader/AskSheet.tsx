@@ -18,6 +18,7 @@ import { ReaderError, askQuestion, signOut, useSubscribed, waitForAnswer, type O
 interface Entry {
   id: string | null;
   q: string;
+  at: number;
   state: 'waiting' | 'done' | 'error';
   answer?: OwnAnswer;
   error?: string;
@@ -26,6 +27,18 @@ interface Entry {
 // The conversation per story outlives the sheet, so closing and reopening keeps it.
 const threads = new Map<string, Entry[]>();
 let remainingToday: number | null = null;
+// Past this, a pending answer says it is slow: usually the answer agent waking up.
+const SLOW_AFTER_MS = 40_000;
+
+function AnsweringHint({ since, usual, slow }: { since: number; usual: string; slow: string }) {
+  const [late, setLate] = useState(() => Date.now() - since >= SLOW_AFTER_MS);
+  useEffect(() => {
+    if (late) return;
+    const timer = setTimeout(() => setLate(true), since + SLOW_AFTER_MS - Date.now());
+    return () => clearTimeout(timer);
+  }, [since, late]);
+  return <p className="answer-foot">{late ? slow : usual}</p>;
+}
 
 export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue; story: Story; lang: Lang; onClose: () => void }) {
   const T = COPY[lang];
@@ -77,7 +90,7 @@ export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue
     const q = question.replace(/\s+/g, ' ').trim();
     if (q.length < 3 || thread.some((t) => t.state === 'waiting')) return;
     setQuestion('');
-    let entries = [...(threads.get(threadKey) ?? []), { id: null, q, state: 'waiting' as const }];
+    let entries = [...(threads.get(threadKey) ?? []), { id: null, q, at: Date.now(), state: 'waiting' as const }];
     update(entries);
     const settle = (patch: Partial<Entry>) => {
       entries = (threads.get(threadKey) ?? entries).map((t, i, all) => (i === all.length - 1 ? { ...t, ...patch } : t));
@@ -135,7 +148,7 @@ export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue
                     <span className="dot pulse" aria-hidden="true" />
                     {T.answering}
                   </p>
-                  <p className="answer-foot">{T.answeringHint}</p>
+                  <AnsweringHint since={t.at} usual={T.answeringHint} slow={T.answeringSlow} />
                 </div>
               )}
               {t.state === 'done' && t.answer && (

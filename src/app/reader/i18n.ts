@@ -103,6 +103,7 @@ type Copy = {
   quotaDaily: string;
   answering: string;
   answeringHint: string;
+  answeringSlow: string;
   askTry: string;
   askNeedKey: string;
   signOut: string;
@@ -192,6 +193,7 @@ export const COPY: Record<Lang, Copy> = {
     quotaDaily: 'Up to 10 questions a day. Answers come only from the sources.',
     answering: 'Reading the sources…',
     answeringHint: 'Usually 10 to 30 seconds.',
+    answeringSlow: 'Taking longer than usual. It can take a few minutes, so leave this open.',
     askTry: 'Or start with one of these:',
     askNeedKey: 'This device isn’t signed in any more. Enter your address and we’ll email you a new link.',
     signOut: 'Sign out on this device',
@@ -311,6 +313,7 @@ export const COPY: Record<Lang, Copy> = {
     quotaDaily: '每天最多 10 个问题，回答只依据来源。',
     answering: '正在根据来源作答…',
     answeringHint: '通常需要 10–30 秒。',
+    answeringSlow: '这次比平时慢，可能需要几分钟，请别关闭这个窗口。',
     askTry: '也可以先看看这些问题：',
     askNeedKey: '这台设备的登录已失效。输入邮箱，我们会给你发一个新链接。',
     signOut: '在这台设备上退出',

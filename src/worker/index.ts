@@ -418,7 +418,7 @@ export default {
     await ensureSchema(env.DB);
     for (const message of batch.messages) {
       try {
-        await processQuestion(env, (message.body as AskMessage).id, message.attempts);
+        await processQuestion(env, message.body as AskMessage, message.attempts);
         message.ack();
       } catch {
         message.retry({ delaySeconds: 5 });

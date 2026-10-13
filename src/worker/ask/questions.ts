@@ -20,13 +20,15 @@ import { safeErrorText } from '../a2a';
 import { credentialFor, listConnectedAgents } from '../connect';
 import { clientKey, throttle } from '../public';
 import { verifyToken } from '../email/tokens';
-import { agentTurn } from '../pipeline/agent';
+import { RunnerUnavailable, agentTurn } from '../pipeline/agent';
 import { extractJson } from '../pipeline/draft';
 import { reviewerAgentId, writerAgentId } from '../pipeline/run';
 import { NOT_COVERED, answerPrompt, normalizeQuestion, verifyAnswer, type AnswerSource } from './answer';
 
 export interface AskMessage {
   id: string;
+  /** How many times the answerer's sandbox has failed to come up for this question. */
+  turn?: number;
 }
 
 export const ANSWERER_AGENT_KEY = 'ask_answer_agent';
@@ -34,7 +36,12 @@ const ENABLED_KEY = 'ask_enabled';
 const DAILY_LIMIT_KEY = 'ask_daily_limit';
 export const PER_READER_PER_DAY = 10;
 const DEFAULT_DAILY_LIMIT = 300;
-const TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Longer than Manyfold waits for a sleeping sandbox to wake (about four minutes) before it
+// answers runner_unavailable: cutting in first only rejoins the same task on the retry.
+const TURN_TIMEOUT_MS = 5 * 60 * 1000;
+// A sandbox that did not wake is asked again under a new messageId after these waits.
+// Manyfold's own automations wait 60 s then 180 s; a reader is waiting here, so sooner.
+const RUNNER_RETRY_DELAYS_S = [30, 90];
 const PER_SOURCE_CHARS = 15_000;
 const TOTAL_SOURCE_CHARS = 40_000;
 const FINAL = ['answered', 'partial', 'none'];
@@ -77,6 +84,13 @@ export interface AskResult {
 }
 
 const answerOf = (status: string, json: string) => ({ status, ...(JSON.parse(json) as { a: string; cites: unknown[] }) });
+
+/**
+ * The A2A messageId of a question's turn: derived from its row, so a redelivered queue
+ * message rejoins the same task instead of billing again. A later turn gets its own id
+ * only after the sandbox failed to come up, when nothing ran.
+ */
+export const askMessageId = (id: string, turn = 0) => (turn > 0 ? `aiin5-ask-${id}-${turn}` : `aiin5-ask-${id}`);
 
 export async function askQuestion(env: Env, body: Body, client: string): Promise<AskResult> {
   const email = typeof body?.key === 'string' ? await verifyToken(env, body.key, 'ask') : null;
@@ -169,7 +183,7 @@ async function sourcesFor(env: Env, issue: Issue, storyId: string): Promise<Answ
 }
 
 /** The queue consumer's work for one question. Throws only to ask the queue for a retry. */
-export async function processQuestion(env: Env, id: string, attempt: number): Promise<void> {
+export async function processQuestion(env: Env, { id, turn = 0 }: AskMessage, attempt: number): Promise<void> {
   const row = await env.DB.prepare('SELECT issue_date, story_id, lang, question, status FROM questions WHERE id = ?')
     .bind(id)
     .first<{ issue_date: string; story_id: string; lang: Lang; question: string; status: string }>();
@@ -186,11 +200,19 @@ export async function processQuestion(env: Env, id: string, attempt: number): Pr
     const agentId = await answererAgentId(env);
     if (!agentId) return await finish(env, id, 'failed', null, 0, 'No answer agent is set.');
     const cred = await credentialFor(env, agentId);
-    const reply = await agentTurn(cred, `aiin5-ask-${id}`, answerPrompt(issue, story, sources, row.question, row.lang), TURN_TIMEOUT_MS);
+    const reply = await agentTurn(cred, askMessageId(id, turn), answerPrompt(issue, story, sources, row.question, row.lang), TURN_TIMEOUT_MS);
     const verified = verifyAnswer(extractJson(reply), sources, row.lang);
     await finish(env, id, verified.status, { a: verified.a, cites: verified.cites }, verified.dropped, null);
   } catch (error) {
     const message = safeErrorText(error instanceof Error ? error.message : error);
+    if (error instanceof RunnerUnavailable) {
+      // The sandbox did not wake in time. Retrying this messageId only finds its failed task.
+      const delaySeconds = RUNNER_RETRY_DELAYS_S[turn];
+      if (delaySeconds === undefined || !env.ASK_QUEUE) return await finish(env, id, 'failed', null, 0, message);
+      await env.DB.prepare("UPDATE questions SET status = 'queued', error = ?, updated_at = ? WHERE id = ?").bind(message, now(), id).run();
+      await env.ASK_QUEUE.send({ id, turn: turn + 1 }, { delaySeconds });
+      return;
+    }
     if (attempt < 2) {
       await env.DB.prepare("UPDATE questions SET status = 'queued', error = ?, updated_at = ? WHERE id = ?").bind(message, now(), id).run();
       throw error;
