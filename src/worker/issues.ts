@@ -60,7 +60,7 @@ export async function listIssues(env: Env, limit = 60): Promise<IssueSummary[]> 
     .all<{ date: string; number: number; data: string }>();
   return results.map((r) => {
     const issue = JSON.parse(r.data) as Issue;
-    return { date: r.date, number: r.number, headline: issue.today[0]?.text ?? issue.stories[0].title };
+    return { date: r.date, number: r.number, headline: issue.today[0]?.text ?? issue.stories[0]?.title ?? issue.briefs[0].text };
   });
 }
 

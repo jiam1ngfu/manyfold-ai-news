@@ -34,7 +34,7 @@ const REGION: Record<RegionKey, L10n> = {
 
 const T = {
   en: {
-    todayIn3: 'Today in 3',
+    todayIn: (n: number) => `Today in ${n}`,
     why: 'Why it matters',
     next: 'What to watch',
     inBrief: 'In brief',
@@ -47,10 +47,10 @@ const T = {
     why_you: 'You’re getting this because you subscribed to AI in 5.',
     unsubscribe: 'Unsubscribe',
     other: 'Read in Chinese',
-    dek: (weekday: string, items: number, minutes: number) => `${weekday}’s issue: ${items} stories, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
+    dek: (weekday: string, items: number, minutes: number) => `${weekday}’s issue: ${items} ${items === 1 ? 'story' : 'stories'}, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
   },
   zh: {
-    todayIn3: '今日三件事',
+    todayIn: (n: number) => `今日${['一', '两', '三'][n - 1] ?? n}件事`,
     why: '为什么重要',
     next: '接下来关注',
     inBrief: '快讯',
@@ -137,7 +137,7 @@ export function renderIssueEmail(issue: Issue, lang: Lang, site: string, postalA
   const d = dateLine(issue.date, lang);
   const dek = t.dek(d.weekday, issue.stories.length + issue.briefs.length, readingMinutes(issue, lang));
   const indexOf = new Map(issue.stories.map((s, i) => [s.id, i]));
-  const lead = issue.today[0] ? richText(issue.today[0].text[lang]) : issue.stories[0] ? richText(issue.stories[0].title[lang]) : '';
+  const lead = issue.today[0] ? richText(issue.today[0].text[lang]) : issue.stories[0] ? richText(issue.stories[0].title[lang]) : issue.briefs[0] ? richText(issue.briefs[0].text[lang]) : '';
   const subject = `${d.short} · ${lead}`.slice(0, 140);
   const preheader = issue.today.slice(1).map((x) => richText(x.text[lang])).join(' · ');
 
@@ -187,7 +187,7 @@ ${p(`font:16px/1.5 ${SERIF};color:${C.ink};`, richHtml(b.text[lang]))}
 ${p(`font:700 20px/1 ${SERIF};color:${C.ink};letter-spacing:-0.01em;`, siteLink(`${base}/${lang}/`, 'AI in 5', `color:${C.ink};text-decoration:none;`))}
 <h1 style="margin:14px 0 6px;font:600 ${lang === 'zh' ? '34px/1.2' : '40px/1.05'} ${SERIF};color:${C.ink};">${esc(d.label)}</h1>
 ${p(`font:15px/1.4 ${SANS};color:${C.graphite};margin-bottom:22px;`, esc(dek))}
-${today ? `${p(`font:600 14px/1.3 ${SANS};color:${C.ink};margin-bottom:6px;`, esc(t.todayIn3))}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${today}</table>` : ''}
+${today ? `${p(`font:600 14px/1.3 ${SANS};color:${C.ink};margin-bottom:6px;`, esc(t.todayIn(issue.today.length)))}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${today}</table>` : ''}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">${stories}</table>
 ${briefs ? `<h2 style="margin:30px 0 4px;font:600 22px/1.25 ${SERIF};color:${C.ink};">${esc(t.inBrief)}</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${briefs}</table>` : ''}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;"><tr><td style="padding-top:20px;border-top:1px solid ${C.hairline};font:12.5px/1.6 ${SANS};color:${C.graphite};">
@@ -199,7 +199,8 @@ ${postalAddress ? p('margin-top:8px;', esc(postalAddress)) : ''}
 </td></tr></table>
 </body></html>`;
 
-  const lines: string[] = [`AI in 5 · ${d.label}`, dek, '', t.todayIn3.toUpperCase()];
+  const lines: string[] = [`AI in 5 · ${d.label}`, dek];
+  if (issue.today.length) lines.push('', t.todayIn(issue.today.length).toUpperCase());
   issue.today.forEach((x, n) => lines.push(`${n + 1}. ${richText(x.text[lang])}`));
   issue.stories.forEach((s, i) => {
     lines.push('', '—', `${REGION[s.region][lang]} · ${s.cat[lang]}`, richText(s.title[lang]).toUpperCase(), '', richText(s.summary[lang]), '', `${t.why}: ${richText(s.why[lang])}`);

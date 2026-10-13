@@ -121,28 +121,30 @@ export function IssuePage({ data, lang, story }: { data: IssueResponse & { issue
       <div className="progress" aria-hidden="true">
         <span style={{ width: `${progress}%` }} />
       </div>
-      <section className="today page" aria-labelledby="t3">
-        <div className="measure">
-          <h2 className="label" id="t3">
-            {T.todayIn3}
-          </h2>
-          <ol className="t3">
-            {issue.today.map((t) => (
-              <li key={t.id}>
-                <a
-                  href={`#s-${t.id}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    document.getElementById(`s-${t.id}`)?.scrollIntoView({ block: 'start' });
-                  }}
-                >
-                  {t.text[lang]}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
+      {issue.today.length > 0 && (
+        <section className="today page" aria-labelledby="t3">
+          <div className="measure">
+            <h2 className="label" id="t3">
+              {T.todayIn(issue.today.length)}
+            </h2>
+            <ol className="t3">
+              {issue.today.map((t) => (
+                <li key={t.id}>
+                  <a
+                    href={`#s-${t.id}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      document.getElementById(`s-${t.id}`)?.scrollIntoView({ block: 'start' });
+                    }}
+                  >
+                    {t.text[lang]}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      )}
       <main className="page">
         {issue.stories.map((s) => (
           <StoryCard key={s.id} issue={issue} story={s} lang={lang} onAskOwn={setAsking} />

@@ -80,6 +80,18 @@ describe('issue email', () => {
     expect(email.html).not.toContain('javascript:');
   });
 
+  it('counts "Today in N" and leaves it out on a day with briefs only', () => {
+    const two = structuredClone(SAMPLE_ISSUE) as Issue;
+    two.today = two.today.slice(0, 2);
+    expect(renderIssueEmail(two, 'en', site).html).toContain('Today in 2');
+    expect(renderIssueEmail(two, 'zh', site).html).toContain('今日两件事');
+    const briefsOnly = { ...structuredClone(SAMPLE_ISSUE), stories: [], today: [] } as Issue;
+    const email = renderIssueEmail(briefsOnly, 'en', site);
+    expect(email.html).not.toContain('Today in');
+    expect(email.subject).toContain(briefsOnly.briefs[0].text.en.slice(0, 20));
+    expect(email.text).toContain('IN BRIEF');
+  });
+
   it('works for the sample, which is a valid issue', () => {
     expect(() => validateIssue(SAMPLE_ISSUE)).not.toThrow();
   });

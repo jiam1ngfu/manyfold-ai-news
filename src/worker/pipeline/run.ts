@@ -16,7 +16,7 @@ import { ensureSchema, getSetting, now, setSetting } from '../db';
 import { listConnectedAgents, credentialFor } from '../connect';
 import { safeErrorText } from '../a2a';
 import { saveIssue } from '../issues';
-import { validateIssue, type SourceKind } from '../../shared/issue';
+import { MAX_BRIEFS, validateIssue, type SourceKind } from '../../shared/issue';
 import { NO_IMAGE_HOSTS, collectCandidates, isMediaUrl, type Candidate, type FeedResult } from './feeds';
 import { orgForUrl } from './orgs';
 import { fetchSnapshots, genericImages, type Snapshot } from './snapshot';
@@ -53,7 +53,6 @@ export interface RunReport {
   step: string;
 }
 
-const MIN_STORIES = 3;
 const MAX_SOURCES_PER_ITEM = 3;
 // Workers allow 50 outbound requests per invocation on the free plan: 16 feeds + this
 // many source pages + 4 agent turns stays under it.
@@ -263,7 +262,8 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'retry'
     snapshots.forEach((s, url) => texts.set(url, s));
     const checked = checkDraft(draft, texts, covered.urls);
     report.checks = checked.checks;
-    if (checked.draft.stories.length < MIN_STORIES) throw new Error(`Only ${checked.draft.stories.length} stories passed the checks; at least ${MIN_STORIES} are needed.`);
+    // No minimum: whatever passes makes the issue, however short. Only an empty one stops here.
+    if (checked.draft.stories.length + checked.draft.briefs.length === 0) throw new Error('Nothing passed the checks.');
 
     // 6. Check 2: the review agent judges the checked draft against the sources (billed
     // turn 3, on the reviewer); its fixes go through check 1 again.
@@ -271,16 +271,18 @@ export async function runPipeline(env: Env, options: { trigger: 'cron' | 'retry'
     const verdicts = readReview(extractJson(await agentTurn(reviewerCred, `aiin5-${runId}-review`, reviewPrompt(issueDate, checked.draft, texts, covered.headlines))));
     const reviewed = applyReview(checked.draft, verdicts, texts, reviewerCred.label);
     report.review = reviewed.review;
-    if (reviewed.draft.stories.length < MIN_STORIES) throw new Error(`Only ${reviewed.draft.stories.length} stories passed the review; at least ${MIN_STORIES} are needed.`);
+    if (reviewed.draft.stories.length + reviewed.draft.briefs.length === 0) throw new Error('Nothing passed the review.');
+    // More briefs than an issue holds: keep the picker's first ones rather than fail the run.
+    const final = { ...reviewed.draft, briefs: reviewed.draft.briefs.slice(0, MAX_BRIEFS) };
 
     // 7. The writer translates (billed turn 4); check 3 runs while assembling.
     report.step = 'translating';
     const sourceNamesZh = new Map(candidates.map((c) => [c.link, c.sourceName.zh]));
-    const entries = translationEntries(reviewed.draft, sourceNamesZh);
+    const entries = translationEntries(final, sourceNamesZh);
     const zh = extractJson(await agentTurn(cred, `aiin5-${runId}-translate`, translatePrompt(entries))) as Record<string, string>;
     const images = new Map<string, string>();
     snapshots.forEach((s, url) => s.image && images.set(url, s.image));
-    const { issue, warnings } = assembleIssue({ date: issueDate, number: await nextNumber(env, issueDate), draft: reviewed.draft, zh, sourceNamesZh, images });
+    const { issue, warnings } = assembleIssue({ date: issueDate, number: await nextNumber(env, issueDate), draft: final, zh, sourceNamesZh, images });
     report.translationWarnings = warnings;
 
     // 8. Save as a draft. Never published from here.

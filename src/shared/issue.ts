@@ -375,6 +375,8 @@ function story(v: unknown, path: string): Story {
   };
 }
 
+export const MAX_BRIEFS = 6;
+
 /** Checks an issue from an untrusted source (the admin API, later the pipeline). */
 export function validateIssue(raw: unknown): Issue {
   if (!isObject(raw)) fail('issue', 'must be an object');
@@ -383,7 +385,6 @@ export function validateIssue(raw: unknown): Issue {
   const number = num(raw.number, 'number');
   if (!Number.isInteger(number) || number < 1) fail('number', 'must be a positive integer');
   const stories = arr(raw.stories, 'stories', 10).map((s, i) => story(s, `stories[${i}]`));
-  if (stories.length === 0) fail('stories', 'an issue needs at least one story');
   const ids = new Set(stories.map((s) => s.id));
   if (ids.size !== stories.length) fail('stories', 'story ids must be unique');
   const today = arr(raw.today, 'today', 3).map((t, i) => {
@@ -392,7 +393,7 @@ export function validateIssue(raw: unknown): Issue {
     if (!ids.has(id)) fail(`today[${i}].id`, 'must point at a story in this issue');
     return { id, text: l10n(t.text, `today[${i}].text`, 300) };
   });
-  const briefs = arr(raw.briefs, 'briefs', 6).map((b, i) => {
+  const briefs = arr(raw.briefs, 'briefs', MAX_BRIEFS).map((b, i) => {
     const p = `briefs[${i}]`;
     if (!isObject(b)) fail(p, 'must be an object');
     const kind = oneOf(b.kind, KINDS, `${p}.kind`);
@@ -408,5 +409,7 @@ export function validateIssue(raw: unknown): Issue {
     if (kind === 'rumor' && brief.org) fail(`${p}.org`, 'rumors must not carry a logo');
     return brief;
   });
+  // A thin day may have no full story, only briefs; an issue with nothing in it is not one.
+  if (stories.length + briefs.length === 0) fail('stories', 'an issue needs at least one story or brief');
   return { date, number, today, stories, briefs, sample: raw.sample === true || undefined };
 }

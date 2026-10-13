@@ -63,6 +63,15 @@ describe('validateIssue', () => {
     expect(() => validateIssue(issue)).toThrow(/https URL or a data:image URL/);
   });
 
+  it('accepts a thin day with briefs only, never an empty issue', () => {
+    const issue = clone(SAMPLE_ISSUE);
+    issue.stories = [];
+    issue.today = [];
+    expect(validateIssue(issue).briefs.length).toBeGreaterThan(0);
+    issue.briefs = [];
+    expect(() => validateIssue(issue)).toThrow(/at least one story or brief/);
+  });
+
   it('requires "Today in 3" to point at stories in the issue', () => {
     const issue = clone(SAMPLE_ISSUE);
     issue.today[0].id = 'missing';

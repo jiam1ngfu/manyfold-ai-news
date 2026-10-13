@@ -22,19 +22,21 @@ export function selectPrompt(issueDate: string, candidates: Candidate[], covered
     published: c.published,
     title: c.title,
     summary: c.summary.slice(0, 400),
+    url: c.link,
   }));
   return `You are the editor of "AI in 5", a daily AI news briefing read in about five minutes, in English and Chinese, by tech professionals worldwide. The issue for ${issueDate} is being prepared.
 
 Pick what goes in it from the candidates below.
 
 Rules:
-- Aim for 5 or 6 stories and 3 or 4 briefs, at most 10 items. Go below 5 stories only when the news is genuinely thin. Never pad.
+- Pick every event worth a reader's time, at most 10 items: the most important as stories (usually 5 or 6), the rest as briefs. There is no minimum: on a thin day a short issue is right. Never pad.
 - Score each event on impact, novelty, credibility and relevance to people who build with or decide about AI. New models, products, prices, funding, policy, research results and hardware come first.
 - Leave out: event and ticket promotions, conference agendas, sponsored posts, minor maintenance or deprecation notices, interviews and opinion pieces with no news, and stories that are not about AI.
 - Cover both the US and China (and Europe or elsewhere when it matters). Do not force a quota.
 - One item per event. If several candidates report the same event, list all their ids in one item. When an official candidate (kind "official") covers the event, always include it, first.
-- Prefer official announcements and first-hand sources. A rumor (unconfirmed report) can only be a brief.
-- Every story should rest on its primary source: the company's own announcement or blog post, the paper, or the official document (a regulator's notice, a filing). When no official candidate covers a story, find that source (reports usually link to it; otherwise check the company's newsroom or blog) and add its exact URL in "extraUrls" (up to 2 per item). Only add first-hand pages you have opened and confirmed cover the same event: never a news site, an aggregator or a social media post. Never guess a URL: every one is fetched and checked, and a wrong one wastes the slot.
+- Story or brief is decided by importance alone. An important event that only reports cover is still a story: the writer attributes it to them. The one exception: a rumor (unconfirmed report) can only be a brief.
+- Prefer official announcements and first-hand sources. When no official candidate covers a story, try to add its primary source (the company's own announcement or blog post, the paper, or the official document such as a regulator's notice or a filing): open the report at its "url" and follow the link it gives to that source; if it gives none, try the company's newsroom or blog. Do not use search engines: they block scripted requests and return unrelated pages. Add the exact URL in "extraUrls" (up to 2 per item). Only add first-hand pages you have opened and confirmed cover the same event: never a news site, an aggregator or a social media post. Never guess a URL: every one is fetched and checked, and a wrong one wastes the slot.
+- Not finding the primary source changes nothing: leave "extraUrls" empty and keep the item a story if it is important. Never make a story a brief for that reason.
 - Do not pick an event that is already in "Covered in the last 7 days" below, even from a different outlet, unless there is a significant new development; then the item is about that development.
 
 Reply with JSON only, no prose:
@@ -74,7 +76,7 @@ export function writePrompt(issueDate: string, items: WriteItem[]): string {
 
 Write ONLY from the source texts below. Code will check your work afterwards: every quote must appear word for word in the cited source text, and every number you write must appear in the sources. Anything that fails is cut, so never write a number or claim you cannot quote.
 
-Length: the whole issue is read in about four minutes, so aim for 800 to 1,000 words in total. Write every story you were given unless its sources do not support it.
+Length: the whole issue is read in about four minutes, so at most 1,000 words in total; a day with fewer items is shorter, never padded. Write every story and brief you were given unless its sources do not support it. A story whose sources are only reports is still a story: attribute it to them. Never turn a story into a brief.
 
 Style:
 - Headline: who + did what + the key number, at most 12 words. No questions. No hype.
@@ -101,7 +103,7 @@ Visuals (optional):
 Also give each story: "id" (short kebab-case), "region" (us, cn, eu, jp or other, by where the main company or institution is), "org" (the main company or null; see below), "lon"/"lat" of its home city, "category" (Models, Products, Companies, Funding, Research, Open Source, Policy or Hardware), and exactly one story with "top": true (the most important).
 "org" in stories and briefs is the company the item is about, or null when it is not about one company. When it is one of these, write the name exactly as listed, since it picks the logo: ${ORGS.map((o) => o.name).join(', ')}.
 Briefs are one sentence of at most 25 words each.
-"today" is three sentences of at most 15 words, one per most important story, each pointing at a story id.
+"today" is one sentence of at most 15 words for each of the three most important stories (for each story when there are fewer), each pointing at a story id.
 
 Reply with JSON only, no prose, in this shape:
 {"today":[{"story":"id","text":"…"}],

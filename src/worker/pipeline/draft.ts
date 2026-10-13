@@ -207,6 +207,6 @@ export function readDraft(raw: unknown): Draft {
     const t = obj(v);
     return { story: text(t.story), text: text(t.text) };
   });
-  if (stories.length === 0) throw new Error('The draft has no stories.');
+  if (stories.length + briefs.length === 0) throw new Error('The draft has no stories or briefs.');
   return { today, stories, briefs };
 }
