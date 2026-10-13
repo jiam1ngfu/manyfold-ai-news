@@ -1,153 +1,132 @@
-# Manyfold Agent 的 Cloudflare Worker 起步模板
+# AI in 5
 
 [English](README.md) · 中文
 
-一个预置了 [Manyfold](https://manyfold.ai) AI agent 连接能力的 Cloudflare Workers 应用模板。
-一键部署，在页面里连接你的 Manyfold agents，用流式聊天验证链路 —— 然后在一套已经跑通的
-技术栈上，构建你真正想做的应用。
+**每天早上 7 点，5 分钟读懂全球 AI，美国和中国都不漏。**
+由 AI 智能体撰写，每个数字和引语都与原始来源核对。中英双语，网站和邮件都能看。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/manyfold-open/cloudflare-worker-starter)
+**阅读地址：** [app.manyfold.ai/ai-news](https://app.manyfold.ai/ai-news/zh/)
+
+[![AI in 5：5 分钟读懂全球 AI](public/ai-news/og/card-zh.png)](https://app.manyfold.ai/ai-news/zh/)
+
+## 读者能得到什么
+
+- **每天一期，读完就结束。** 开头是"今日三件事"，然后是几条要闻和几条快讯。每期最多 10 条、约 1,000 个英文单词；新闻少的日子就少发几条，不凑数。
+- **中美都覆盖。** 美国、中国和欧洲的实验室、公司和监管机构的动态，按原文语言阅读。
+- **每条都能核对。** 每条新闻都附来源，并标明是官方、媒体报道还是传闻。荧光笔划出的数字已由程序与原文比对，点一下就能看到原话。
+- **中英双语。** 英文是母版，中文由 AI 翻译，并核对数字、名称和链接与英文版一致。两种语言各有独立网址。
+- **当地时间早上 7 点发邮件。** 双重确认订阅，邮件里就是完整的一期，一键退订，没有追踪像素。
+- **就新闻提问。** 订阅者可以自己提问；回答只依据这条新闻的来源，每句话都附出处，来源里没有的会直接说明。
+- **公开更正。** 更正过的新闻会标注改了什么；撤下的会留下说明。全部列在[更正记录页](https://app.manyfold.ai/ai-news/zh/corrections)，并在下一封邮件里告诉订阅者。
+
+## 一期是怎么做出来的
+
+没有人手工撰写或逐期审稿。每天傍晚由流水线完成，事实的最终判断由程序而不是 AI 来做。
 
 ```
-┌──────────────┐    ┌───────────────┐    ┌────────────────────┐    ┌──────────────────┐
-│ 1. 部署      │ →  │ 2. 打开你的   │ →  │ 3. 连接 agent      │ →  │ 4. 聊天验证，    │
-│  (按钮或     │    │    Worker URL │    │  （在 Manyfold 上  │    │    然后开始构建  │
-│  fork+Builds)│    │               │    │    授权批准）      │    │    你的应用      │
-└──────────────┘    └───────────────┘    └────────────────────┘    └──────────────────┘
+19:30 UTC  采集      官方新闻室、实验室和一线媒体（RSS 和新闻页面）
+           选题      写稿智能体挑选新闻                                   ← 计费回合 1
+           抓取      原文页面，存成快照用于核对
+           撰写      写稿智能体写英文母版                                 ← 计费回合 2
+           第一道    程序：每段引语、每个数字都必须在原文里找到
+           第二道    另一个智能体（不同模型家族）对照原文逐条审核          ← 计费回合 3
+                     它的修改会再过一遍第一道审核
+           翻译      写稿智能体写中文版                                   ← 计费回合 4
+           第三道    程序：中英文的数字、名称和链接必须一致
+           发布      只发三道审核都通过的内容，不通过的删掉
+20:30 UTC  重试      仅当 19:30 那次失败时再跑一次
+当地 07:00           按每位订阅者的时区发邮件
 ```
 
-## 你会得到什么
+三个智能体运行在 [Manyfold](https://manyfold.ai) 上，各自有独立的沙箱：**写稿**（选题、撰写、翻译）、**审核**（第二道审核；不能上网，只依据给它的原文判断）和**回答**（读者提问；禁用所有工具，永远看不到读者的邮箱）。流水线失败、每期自动发布（新闻偏少时附提醒）、读者报错时，负责人都会收到邮件，并在 `/admin` 里抽查。
 
-- **连接 agent** —— 与 Manyfold 之间的设备码（device-code）授权握手：弹窗打开 Manyfold
-  的授权页，你核对确认码、勾选要共享的 agents 即可。Bearer token 以 AES-GCM 加密存入你的
-  D1 数据库，永远不会到达浏览器。
-- **聊天** —— 与每个已连接 agent 的流式聊天（A2A `message/stream` over SSE）。对话持久化
-  在 D1 中，并保留 agent 侧的 `contextId`，刷新页面后多轮上下文依然有效。
-- **设置页** —— 查看所有已连接的 agents，重新运行（免费、不计费的）连通性探测，断开连接，
-  或继续连接更多。重复授权同一个 agent 会原地轮换它的 token。
-- **一个干净的迭代起点** —— Vite + React 19 + Hono 跑在同一个 Worker 上，D1 采用零迁移
-  schema，几乎没有魔法。加一个路由、一张表、一个组件，直接发布。
+产品方案见 [docs/product-plan.md](docs/product-plan.md)，设计规范和原型见 [docs/design/](docs/design/)。
 
-## 部署
+## 隐私
 
-### 路径 A —— Deploy to Cloudflare 按钮（推荐）
+不用 Cookie，没有广告，没有第三方追踪。订阅者的邮箱从不写进日志，也不会出现在任何接口的返回里；阅读数据只按天汇总。未确认、已退订和投递失败的邮箱 30 天后删除；"退订并删除我的数据"会立即删除全部记录。完整政策：[app.manyfold.ai/ai-news/zh/privacy](https://app.manyfold.ai/ai-news/zh/privacy)。
 
-> [!IMPORTANT]
-> **在 Cloudflare 表单中点击 "Deploy" 之前，请先展开一次 "Advanced settings" 区域。**
-> 截至 2026 年 8 月，Cloudflare 控制台存在一个 bug：该区域折叠时，其中的隐藏字段
-> （构建 API token、非生产分支部署命令）不会被初始化 —— 流程会在创建仓库后静默卡住，
-> 且不显示任何错误。展开该区域后字段会自动填充，部署即可正常完成。这是控制台侧的
-> 问题，与本模板无关。
+## 技术架构
 
-点击上方按钮，Cloudflare 会：
+一个 Cloudflare Worker 负责 `app.manyfold.ai/ai-news` 下的全部内容：
 
-1. 在你的 GitHub/GitLab 账户中创建这个仓库的副本；
-2. 根据 `wrangler.jsonc` 自动创建 D1 数据库，并把真实的 `database_id` 写入你的副本；
-3. 将仓库接入 **Workers Builds** —— 之后每次 push 到 `main` 都会自动构建
-   （`npm run build`）并部署（`npx wrangler deploy`）。
-
-不需要配置任何 secret。打开 Worker URL，你就已经到了流程图的第 2 步。
-
-### 路径 B —— fork / 使用模板，自己接入 Workers Builds
-
-1. 在 GitHub 上 fork 本仓库（或点 "Use this template"）。
-2. 创建数据库：`npx wrangler d1 create manyfold-app-db`，把返回的 `database_id` 填入
-   `wrangler.jsonc`。
-3. 在 Cloudflare 控制台：**Workers & Pages → Create → Connect to Git**，选择你的 fork，
-   构建命令填 `npm run build`，部署命令填 `npx wrangler deploy`。
-4. push 到 `main` —— Workers Builds 会完成部署。
-
-### 部署之后（两条路径通用）
-
-URL 公开后强烈建议设置 —— 否则任何拿到 URL 的人都能用你的 agents 聊天（消耗你的额度）：
-
-```bash
-npx wrangler secret put ADMIN_PASSWORD
+```
+浏览器 ── 页面 ──► Worker：index.html，并为每个页面写入标题、分享卡片和状态码（pages.ts）
+       ── /api ──► Hono 应用（src/worker/index.ts）
+                     读者接口   已发布的简报、订阅、提问、报错、阅读计数
+                     后台接口   需要 ADMIN_PASSWORD：简报、质量、数据、邮件、智能体
+定时 19:30 / 20:30 ─► 流水线（src/worker/pipeline/），之后清理过期数据（retention.ts）
+定时 每 15 分钟 ────► 按当地 07:00 发邮件（src/worker/email/）
+队列 aiin5-ask ─────► 把读者问题交给回答智能体（src/worker/ask/）
+                     D1（src/worker/db.ts）· Resend · Turnstile · Manyfold A2A
 ```
 
-可选，让凭证加密密钥不落在数据库里（见[安全说明](#安全说明)）：
+| 路径 | 内容 |
+| --- | --- |
+| `src/app/reader/` | 读者端：每期简报、往期、生产方法、更正记录、隐私政策、提问 |
+| `src/app/`（其余） | 负责人后台 `/admin`（只能通过网址进入） |
+| `src/shared/issue.ts` | 简报的数据格式、校验和更正 |
+| `src/worker/pipeline/` | 采集、选题、撰写、三道审核、翻译、发布 |
+| `src/worker/ask/` | 读者提问，以及每个回答必须通过的核对 |
+| `src/worker/email/` | 邮件渲染、发送、签名链接、退信 webhook |
+| `src/worker/quality.ts` | 更正、报错、负责人检查、上线门槛 |
+| `src/worker/pages.ts` | 每个页面的服务端标签、站点地图 |
+| `AGENTS.md` | 任何改动都必须遵守的规则，改代码前请先读 |
 
-```bash
-npx wrangler secret put CONFIG_ENCRYPTION_KEY
-```
+技术栈：Vite、React 19、Hono、D1，没有 ORM，也没有迁移步骤：`src/worker/db.ts` 里的表结构在第一次请求时自动建立。
 
-## 本地开发
+## 本地运行
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars   # 然后取消注释 MANYFOLD_API_BASE_URL / ENVIRONMENT
+cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-一条命令启动全部：Vite 以 HMR 方式服务 React 应用，Worker 运行在 workerd 中并**自动模拟
-本地 D1 数据库** —— schema 在第一个请求时自动创建，永远不需要迁移步骤。
+开发服务器会同时运行 React 应用和 Worker，自带本地 D1 数据库和一期虚构的示例简报。读者端在 http://localhost:5173/ai-news/，后台在 http://localhost:5173/ai-news/admin。在设置 `RESEND_API_KEY` 和 `EMAIL_FROM` 之前，邮件只记录、不发送。
 
 | 命令 | 作用 |
 | --- | --- |
-| `npm run dev` | 开发服务器（前端 + worker + 本地 D1） |
-| `npm run check` | 类型检查、构建、`wrangler deploy --dry-run` |
+| `npm run dev` | 应用、Worker 和本地 D1 |
 | `npm test` | 单元测试（vitest） |
-| `npm run deploy` | 手动部署（通常由 Workers Builds 完成） |
-| `npm run smoke -- <url>` | 对部署运行冒烟测试 |
+| `npm run check` | 类型检查、构建、`wrangler deploy --dry-run` |
+| `npm run smoke -- <url>` | 对线上环境做冒烟测试 |
+| `node scripts/og-cards.mjs` | 重新生成分享卡片（需要 Chrome） |
 
-## 架构一览
+## 配置
 
+普通变量写在 `wrangler.jsonc` 里；密钥用 `npx wrangler secret put NAME` 设置，绝不提交（`.dev.vars` 已被 git 忽略）。
+
+| 名称 | 类型 | 用途 |
+| --- | --- | --- |
+| `SITE_URL` | 变量 | 网站公开地址，包含基础路径 |
+| `EMAIL_POSTAL_ADDRESS`、`CONTACT_EMAIL` | 变量 | 每封邮件里的出品方地址；回复地址和隐私联系邮箱 |
+| `TURNSTILE_SITE_KEY` | 变量 | 订阅表单的人机验证 |
+| `ADMIN_PASSWORD` | 密钥 | 保护 `/admin` 和后台接口 |
+| `RESEND_API_KEY`、`EMAIL_FROM` | 密钥 | 发送邮件 |
+| `RESEND_WEBHOOK_SECRET` | 密钥 | 校验退信和投诉 webhook |
+| `TURNSTILE_SECRET_KEY` | 密钥 | 校验人机验证 |
+| `CONFIG_ENCRYPTION_KEY` | 密钥 | 可选，用于加密存在 D1 里的智能体令牌 |
+
+## 部署
+
+生产环境是 NetMind.AI Cloudflare 账号下的 `manyfold-ai-news` Worker，路由到 `app.manyfold.ai/ai-news`。推送到 GitHub **不会**自动部署。在一份干净的 `main` 检出里执行：
+
+```bash
+npm ci
+npm run check
+npm test
+npm run build
+npx wrangler deploy
+npm run smoke -- https://app.manyfold.ai/ai-news
 ```
-浏览器（React SPA，dist/client）
-   │  /api/*（run_worker_first）             其余请求 → 静态资源
-   ▼
-Hono 应用（src/worker/index.ts）
-   │ ensureSchema → Origin 校验 → 管理密码门
-   ├─ /api/connect*   src/worker/connect.ts   Manyfold 设备码授权握手
-   ├─ /api/agents*    src/worker/connect.ts   列表 / 验证 / 断开
-   ├─ /api/agents/:id/chat  src/worker/chat.ts  SSE 透传 + 持久化
-   ▼
-D1（settings、connect_sessions、agents、conversations、messages）
-Manyfold A2A（message/stream、tasks/get）   ← 每个 agent 独立的 bearer token，调用时解密
-```
 
-| 文件 | 用途 |
-| --- | --- |
-| `src/worker/index.ts` | 路由、中间件、错误映射 |
-| `src/worker/connect.ts` | Manyfold 授权握手与已连接 agent 的存储 |
-| `src/worker/a2a.ts` | A2A JSON-RPC + SSE 流消费器、SSRF 防护、密钥脱敏 |
-| `src/worker/chat.ts` | 一轮聊天：上游 agent SSE 进、应用 SSE 出、D1 持久化 |
-| `src/worker/crypto.ts` | AES-GCM 加解密、常量时间比较 |
-| `src/worker/db.ts` | schema（运行时自动应用）与设置存储 |
-| `src/shared/types.ts` | worker 与浏览器共享的 API 类型 |
-| `src/app/` | React 应用：聊天 + 设置两个标签页、连接面板、密码门 |
+刚部署完的第一个请求可能因为路由还在生效而返回 530，冒烟测试会等它就绪。
 
-## 如何扩展
+## 安全
 
-这个模板是起点，不是框架。预期的迭代方式：
+智能体令牌和 Manyfold 设备码都用 AES-GCM 加密存在 D1 里，从不发到浏览器；智能体地址经过 SSRF 防护；连通性检查从不计费；每个计费回合的消息 ID 都由数据库里的记录推导而来，重试不会重复计费。报告安全问题请见 [SECURITY.md](SECURITY.md)。
 
-- **加 API 路由** —— 在 `src/worker/index.ts` 中添加；除 `/api/health` 和 `/api/state`
-  外的路由在设置了管理密码后会自动受保护。
-- **加数据表** —— 在 `src/worker/db.ts` 的 `SCHEMA` 里追加
-  `CREATE TABLE IF NOT EXISTS …`；下一个请求就会创建，本地和线上都一样。
-- **加页面** —— 在 `src/app/App.tsx` 中添加组件和标签页。
-- **在服务端代码里调用你的 agent** —— `src/worker/connect.ts` 的
-  `credentialFor(env, agentId)` 会返回任意已连接 agent 的 `{ rpcUrl, token }`；完整的流式
-  调用见 `src/worker/chat.ts`，后台任务也可以改用非流式的 `message/send` + `tasks/get`。
+## 许可
 
-`AGENTS.md` 列出了迭代时必须保持的不变量 —— 对人类和 AI agent 都适用。
-
-## 安全说明
-
-- **设备码握手的设计保证凭证永远不经过浏览器。** 浏览器只拿到一个不透明的 `connectId`；
-  设备码（唯一能兑换 agent token 的东西）加密存放在 D1 中，且只能兑换一次。页面上显示的
-  确认码是这个流程的防钓鱼校验 —— Manyfold 授权页必须显示同一个码。
-- **Agent token 以 AES-GCM 加密存储**，密钥来自 `CONFIG_ENCRYPTION_KEY`；为了让一键部署
-  零配置可用，未设置时会在首次使用时生成随机密钥并存入同一个数据库。这个取舍是诚实的：
-  生成的密钥能防住部分暴露（日志、单表查询），但防不住整库导出。设置 secret 即可消除
-  这个隐患。
-- **应用默认是开放的。** 在设置 `ADMIN_PASSWORD` 之前，任何拿到 URL 的人都能连接 agent
-  并聊天。设置后，除 `/api/health` 和 `/api/state` 外的所有路由都需要密码（常量时间比较；
-  通过 header 传输，存放在 sessionStorage）。
-- Agent 的 RPC URL 会被校验（仅允许 https，生产环境拒绝私有/回环地址）；连通性验证使用
-  不计费的 `tasks/get` 探测而非真实对话；所有错误信息在到达日志或浏览器之前都会剥离
-  任何形似 token 的内容。
-
-## 许可证
-
-[MIT](LICENSE)
+[MIT](LICENSE)。基于 [Manyfold Cloudflare Worker starter](https://github.com/manyfold-open/cloudflare-worker-starter) 构建。

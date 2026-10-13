@@ -39,7 +39,8 @@ import { seal, unseal } from './crypto';
 import { now } from './db';
 
 const DEFAULT_API_BASE = 'https://api.manyfold.ai';
-const CLIENT_NAME = 'Cloudflare Worker Starter';
+// Shown on Manyfold's consent page when the owner connects an agent.
+const CLIENT_NAME = 'AI in 5';
 const START_TIMEOUT_MS = 20_000;
 const POLL_TIMEOUT_MS = 30_000;
 const SESSION_TTL_MS = 15 * 60_000;

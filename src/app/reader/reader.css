@@ -298,3 +298,29 @@ html:lang(zh) .plain h1 { font-weight: 600; letter-spacing: 0; font-size: 30px; 
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Corrections: a corrected story says so first, in the marker's pale tint. */
+.correction { background: var(--marker-soft); border-left: 3px solid var(--marker); padding: 10px 14px; margin: 0 0 14px; font: 400 14.5px/1.5 var(--sans); }
+.correction p { margin: 0; }
+.correction p + p { margin-top: 6px; }
+.correction a { color: var(--ink); }
+.withdrawn .region { color: var(--ink); }
+.corrections-list .note { display: block; font: 400 14.5px/1.45 var(--sans); color: var(--graphite); margin-top: 4px; }
+
+/* Story actions: see sources and share sit together on the right. */
+.story-actions { display: inline-flex; gap: 14px; }
+
+/* Report a problem, with an optional note. */
+.report-form { display: grid; gap: 6px; padding: 8px 0 4px; font-family: var(--sans); }
+.report-form textarea { width: 100%; resize: vertical; font: 400 14.5px/1.4 var(--sans); padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--paper); color: var(--ink); }
+.report-form textarea:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+.report-actions { display: flex; gap: 16px; }
+.text-btn.strong { font-weight: 600; color: var(--ink); }
+
+/* Survey, privacy link, Turnstile slot, unsubscribe choices. */
+.survey { margin-top: 26px; }
+.survey .chip-btn:disabled:not([aria-pressed="true"]) { opacity: .45; }
+.fine .fine-link { color: var(--graphite); }
+.turnstile:not(:empty) { margin-top: 10px; }
+.row-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; margin: 18px 0 6px; }
+.survey .fb-btns { flex-wrap: wrap; }

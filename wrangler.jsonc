@@ -1,9 +1,7 @@
-// Cloudflare Worker configuration.
+// Cloudflare Worker configuration for AI in 5 (https://app.manyfold.ai/ai-news).
 //
-// The "Deploy to Cloudflare" button reads this file: it provisions the D1 database
-// declared below, writes the real database_id into your copy of the repo, and wires
-// the repo to Workers Builds so every push to main redeploys automatically
-// (build command: `npm run build`, deploy command: `npx wrangler deploy`).
+// Deploys are manual: `npm run build && npx wrangler deploy` from a checkout of main
+// (see README "Deploying"). Pushing to GitHub does not deploy.
 //
 // Keep `main`, `assets` and the `DB` binding valid — the app reads all three.
 {
@@ -17,9 +15,10 @@
   "observability": {
     "enabled": true
   },
-  // Daily pipeline: 19:30 UTC, so the issue is ready before the first readers' 7:00, and
-  // 20:30 UTC, which runs again only if the day's run failed (src/worker/pipeline/run.ts).
-  // It only saves drafts; nothing is published without the owner (see /admin, Issues).
+  // Daily pipeline: 19:30 UTC, so the issue is out before the first readers' 7:00 (Asia's
+  // 7:00 is 23:00 UTC), and 20:30 UTC, which runs again only if the day's run failed and
+  // then deletes data past its retention (src/worker/pipeline/run.ts, retention.ts). An
+  // issue that passes the checks is published unless auto-publish is off in /admin.
   // Every 15 minutes: email the published issue to subscribers whose local time is
   // 07:00 to 12:00 (src/worker/email/deliver.ts). Each cron runs as its own invocation.
   "triggers": {
@@ -37,7 +36,17 @@
     "directory": "./dist/client",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/ai-news/api/*"]
+    // Pages go through the Worker so each one gets its own title, share card and status
+    // (src/worker/pages.ts); built files and public/ai-news files are served directly.
+    "run_worker_first": [
+      "/ai-news",
+      "/ai-news/*",
+      "!/ai-news/assets/*",
+      "!/ai-news/brand/*",
+      "!/ai-news/og/*",
+      "!/ai-news/favicon.svg",
+      "!/ai-news/apple-touch-icon.png"
+    ]
   },
   // Readers' own questions wait here for the answer agent: an agent turn can outlast what a
   // request may keep running after it responds. Create once: npx wrangler queues create aiin5-ask
@@ -57,13 +66,22 @@
     "MANYFOLD_API_BASE_URL": "https://api.manyfold.ai",
     // "production" enforces https-only and no-private-IP checks on agent URLs.
     "ENVIRONMENT": "production",
-    // The public site, base path included (src/shared/base.ts). Links in emails point here.
-    "SITE_URL": "https://app.manyfold.ai/ai-news"
+    // The public site, base path included (src/shared/base.ts). Links in emails, share
+    // cards and the sitemap point here.
+    "SITE_URL": "https://app.manyfold.ai/ai-news",
+    // The publisher, in every email footer (CAN-SPAM) and on the privacy page. Same
+    // entity and contact as Manyfold's own privacy policy (docs.manyfold.ai/privacy).
+    "EMAIL_POSTAL_ADDRESS": "NetMind.AI Ltd, 6th Floor, 75 King William Street, London EC4N 7BE, United Kingdom",
+    // Reply-To of every email (the sending domain takes no mail) and the privacy contact.
+    "CONTACT_EMAIL": "customer-support@netmind.ai",
+    // Turnstile on the subscribe form; public. Its secret is TURNSTILE_SECRET_KEY.
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFVggIwuQiiBHXt5"
   }
-  // Optional hardening, neither is required to deploy:
-  //   npx wrangler secret put ADMIN_PASSWORD          # locks the app behind a password
-  //   npx wrangler secret put CONFIG_ENCRYPTION_KEY   # >=32 chars; otherwise a key is generated and stored in D1
-  // Email (optional; without both, emails are logged in /admin but not sent):
-  //   npx wrangler secret put RESEND_API_KEY
-  //   npx wrangler secret put EMAIL_FROM              # e.g. AI in 5 <hello@your-domain>
+  // Secrets (npx wrangler secret put NAME), none needed to deploy:
+  //   ADMIN_PASSWORD          locks /admin and the admin API
+  //   CONFIG_ENCRYPTION_KEY   >=32 chars; otherwise a key is generated and stored in D1
+  //   RESEND_API_KEY          with EMAIL_FROM (e.g. AI in 5 <hello@your-domain>): without both,
+  //   EMAIL_FROM              emails are logged in /admin but not sent
+  //   RESEND_WEBHOOK_SECRET   signs bounce and complaint webhooks (whsec_…); off without it
+  //   TURNSTILE_SECRET_KEY    with TURNSTILE_SITE_KEY above; the form has no check without it
 }

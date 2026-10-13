@@ -6,6 +6,8 @@
 
 import { A2AError, consumeA2AStream } from '../a2a';
 import type { AgentCredential } from '../types';
+import { extractJson } from './draft';
+import { repairPrompt } from './prompts';
 
 const TURN_TIMEOUT_MS = 8 * 60 * 1000;
 
@@ -37,5 +39,22 @@ export async function agentTurn(cred: AgentCredential, messageId: string, text: 
     return snapshot.text;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * A turn whose reply must be one JSON object. jsonrepair fixes the usual slips for free;
+ * a reply still broken after that gets one more turn to fix its own syntax, under its own
+ * messageId (`<messageId>-fix`), so a step bills at most one extra turn, and a retried
+ * step rejoins both tasks instead of billing them again. `onRepair` reports that it happened.
+ */
+export async function jsonTurn(cred: AgentCredential, messageId: string, text: string, onRepair?: () => void): Promise<unknown> {
+  const reply = await agentTurn(cred, messageId, text);
+  try {
+    return extractJson(reply);
+  } catch (error) {
+    onRepair?.();
+    const problem = error instanceof Error ? error.message : String(error);
+    return extractJson(await agentTurn(cred, `${messageId}-fix`, repairPrompt(reply, problem)));
   }
 }

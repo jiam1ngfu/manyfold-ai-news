@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { IssueResponse, IssueSummary, Lang, Quote } from '../../shared/issue';
+import type { CorrectionEntry, IssueResponse, IssueSummary, Lang, Quote } from '../../shared/issue';
 import { withBase } from '../../shared/base';
 import { getStoredPassword } from '../api';
 
@@ -33,6 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const fetchLatest = (before: string) => request<IssueResponse>(`/api/issues/latest?before=${encodeURIComponent(before)}`);
 export const fetchIssue = (date: string) => request<IssueResponse>(`/api/issues/${encodeURIComponent(date)}`);
 export const fetchArchive = () => request<{ issues: IssueSummary[] }>('/api/issues');
+export const fetchCorrections = () => request<{ corrections: CorrectionEntry[] }>('/api/issues/corrections');
 
 /**
  * The owner's draft preview (?preview=1). Uses the admin password the console keeps in
@@ -46,14 +47,69 @@ export const fetchDraft = (date: string) =>
 const post = (path: string, body: unknown) => request<{ ok: true }>(path, { method: 'POST', body: JSON.stringify(body) });
 
 export const sendFeedback = (date: string, value: 'useful' | 'not_useful') => post('/api/feedback', { date, value });
-export const sendReport = (date: string, storyId: string, target: string, lang: Lang) =>
-  post('/api/reports', { date, storyId, target, lang });
+export const sendReport = (date: string, storyId: string, target: string, lang: Lang, note = '') =>
+  post('/api/reports', { date, storyId, target, lang, ...(note.trim() ? { note: note.trim() } : {}) });
+
+/* ───────── reading counters ───────── */
+
+let fromEmail = false;
+const SEEN_KEY = 'aiin5.seen';
+
+/** Issues this browser has opened, newest last: decides when to ask the survey question. */
+export const seenIssues = (): string[] => {
+  try {
+    const value = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]');
+    return Array.isArray(value) ? value.filter((d) => typeof d === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Counts a view, a finish or a share of a published issue: totals per day, never per
+ * person. A view by a subscriber's browser also carries its ask key, so the site knows a
+ * subscriber opened this issue (stored as a salted hash). Each issue's view and finish
+ * count once per visit. Failures are ignored: counting must never get in the way.
+ */
+export function sendEvent(event: 'view' | 'finish' | 'share', date: string, lang: Lang): void {
+  if (event !== 'share') {
+    const once = `aiin5.${event}.${date}`;
+    if (sessionStorage.getItem(once)) return;
+    sessionStorage.setItem(once, '1');
+  }
+  if (event === 'view') localStorage.setItem(SEEN_KEY, JSON.stringify([...seenIssues().filter((d) => d !== date), date].slice(-30)));
+  const key = event === 'view' ? askKey() : null;
+  post('/api/events', { event, date, lang, source: fromEmail ? 'email' : 'web', ...(key ? { key } : {}) }).catch(() => undefined);
+}
+
+/** Shares a page of ours: the share sheet where there is one, else the clipboard. */
+export async function sharePage(path: string, title: string, date: string, lang: Lang): Promise<'shared' | 'copied' | null> {
+  const url = `${location.origin}${withBase(path)}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, url });
+      sendEvent('share', date, lang);
+      return 'shared';
+    }
+    await navigator.clipboard.writeText(url);
+    sendEvent('share', date, lang);
+    return 'copied';
+  } catch {
+    return null; // the reader closed the share sheet
+  }
+}
+
+const SURVEY_KEY = 'aiin5.survey';
+export const surveyAnswered = (): boolean => localStorage.getItem(SURVEY_KEY) !== null;
+export const sendSurvey = (answer: 'very' | 'somewhat' | 'not') =>
+  post('/api/survey', { key: askKey(), answer }).then(() => localStorage.setItem(SURVEY_KEY, answer));
 
 const SUBSCRIBED_KEY = 'aiin5.subscribed';
 
-export function subscribe(email: string, lang: Lang, source: 'done' | 'gate') {
+/** `turnstile` is the bot check's token, when the site has the check on. */
+export function subscribe(email: string, lang: Lang, source: 'done' | 'gate', turnstile: string | null = null) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  return post('/api/subscribe', { email, lang, timezone, source }).then(() => {
+  return post('/api/subscribe', { email, lang, timezone, source, ...(turnstile ? { turnstile } : {}) }).then(() => {
     localStorage.setItem(SUBSCRIBED_KEY, '1');
     window.dispatchEvent(new Event('aiin5:subscribed'));
   });
@@ -77,6 +133,8 @@ export function captureAskKey(): void {
   const url = new URL(location.href);
   const key = url.searchParams.get('k');
   if (!key) return;
+  // Only issue emails carry ?k= on their links: this visit came from one.
+  fromEmail = true;
   if (key.length <= 600) {
     localStorage.setItem(ASK_KEY, key);
     markSubscribed(true);
@@ -100,8 +158,9 @@ export const signOut = (): void => {
   localStorage.removeItem(ASK_KEY);
   markSubscribed(false);
 };
-export const unsubscribe = (token: string) =>
-  post('/api/unsubscribe', { token }).then(() => {
+/** With erase, the address and everything linked to it is deleted, not just unsubscribed. */
+export const unsubscribe = (token: string, erase = false) =>
+  post('/api/unsubscribe', { token, ...(erase ? { erase: true } : {}) }).then(() => {
     localStorage.removeItem(ASK_KEY);
     markSubscribed(false);
   });

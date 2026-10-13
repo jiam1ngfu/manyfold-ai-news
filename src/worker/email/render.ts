@@ -9,7 +9,7 @@
  * placeholders after rendering: opening any story from the email lets that browser ask.
  */
 
-import { readingMinutes, tokenize, type Issue, type L10n, type Lang, type RegionKey, type Story } from '../../shared/issue';
+import { readingMinutes, storyPosition, tokenize, type CorrectionEntry, type Issue, type L10n, type Lang, type RegionKey, type Story } from '../../shared/issue';
 
 export const UNSUBSCRIBE = '%%UNSUBSCRIBE_URL%%';
 export const ASK_KEY = '%%ASK_KEY%%';
@@ -47,6 +47,11 @@ const T = {
     why_you: 'You’re getting this because you subscribed to AI in 5.',
     unsubscribe: 'Unsubscribe',
     other: 'Read in Chinese',
+    privacy: 'Privacy',
+    corrections: 'Corrections',
+    correctionsIntro: 'Since the last issue we fixed these. Details are in the corrections log.',
+    corrected: 'Corrected',
+    withdrawn: 'Withdrawn',
     dek: (weekday: string, items: number, minutes: number) => `${weekday}’s issue: ${items} ${items === 1 ? 'story' : 'stories'}, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
   },
   zh: {
@@ -63,6 +68,11 @@ const T = {
     why_you: '你收到这封邮件，是因为你订阅了 AI in 5。',
     unsubscribe: '退订',
     other: 'Read in English',
+    privacy: '隐私政策',
+    corrections: '更正',
+    correctionsIntro: '上一期发出后，我们更正了下面这些内容，详情见更正记录。',
+    corrected: '已更正',
+    withdrawn: '已撤下',
     dek: (weekday: string, items: number, minutes: number) => `${weekday}，${items} 条新闻，约 ${minutes} 分钟`,
   },
 } as const;
@@ -75,7 +85,8 @@ const safeUrl = (url: string): string | null => (/^https:\/\/[^\s"<>]+$/.test(ur
 /** Links to our own site come from SITE_URL or the request origin, so local http is fine. */
 const ownUrl = (url: string): string | null => (/^https?:\/\/[^\s"<>]+$/.test(url) ? url : null);
 
-function dateLine(date: string, lang: Lang): { label: string; weekday: string; short: string } {
+/** An issue date in each language: "October 13" / "10 月 13 日", the weekday, and a short form. */
+export function dateLine(date: string, lang: Lang): { label: string; weekday: string; short: string } {
   const d = new Date(`${date}T00:00:00Z`);
   if (lang === 'zh') {
     return {
@@ -128,24 +139,27 @@ function visualHtml(story: Story, lang: Lang): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 4px;"><tr><td colspan="2" style="padding:0 0 6px;font:600 14px/1.4 ${SANS};color:${C.ink};">${esc(v.title[lang])}</td></tr>${rows}</table>${p(`font:12px/1.4 ${SANS};color:${C.graphite};`, esc((v.type === 'compare' && v.note ? `${v.note[lang]} · ` : '') + v.credit[lang]))}`;
 }
 
-export function renderIssueEmail(issue: Issue, lang: Lang, site: string, postalAddress?: string): RenderedEmail {
+/**
+ * `corrections` are fixes made to earlier issues since the last one went out: readers
+ * who got the wrong version by email hear about it in the next email (product plan §5.5).
+ */
+export function renderIssueEmail(issue: Issue, lang: Lang, site: string, postalAddress?: string, corrections: CorrectionEntry[] = []): RenderedEmail {
   const t = T[lang];
   const other: Lang = lang === 'en' ? 'zh' : 'en';
   const base = site.replace(/\/+$/, '');
   const issueUrl = `${base}/${lang}/${issue.date}`;
-  const storyUrl = (i: number) => `${issueUrl}/${i + 1}?k=${ASK_KEY}`;
+  // By published position (storySlots), so links stay right if a story is later withdrawn.
+  const storyUrl = (id: string) => `${issueUrl}/${storyPosition(issue, id)}?k=${ASK_KEY}`;
   const d = dateLine(issue.date, lang);
   const dek = t.dek(d.weekday, issue.stories.length + issue.briefs.length, readingMinutes(issue, lang));
-  const indexOf = new Map(issue.stories.map((s, i) => [s.id, i]));
   const lead = issue.today[0] ? richText(issue.today[0].text[lang]) : issue.stories[0] ? richText(issue.stories[0].title[lang]) : issue.briefs[0] ? richText(issue.briefs[0].text[lang]) : '';
   const subject = `${d.short} · ${lead}`.slice(0, 140);
   const preheader = issue.today.slice(1).map((x) => richText(x.text[lang])).join(' · ');
 
   const today = issue.today
     .map((x) => {
-      const i = indexOf.get(x.id);
       const label = richText(x.text[lang]);
-      return `<tr><td style="padding:10px 0;border-top:1px solid ${C.ink};font:17px/1.4 ${SERIF};color:${C.ink};">${i === undefined ? esc(label) : siteLink(storyUrl(i), label, `color:${C.ink};text-decoration:none;`)}</td></tr>`;
+      return `<tr><td style="padding:10px 0;border-top:1px solid ${C.ink};font:17px/1.4 ${SERIF};color:${C.ink};">${storyPosition(issue, x.id) === 0 ? esc(label) : siteLink(storyUrl(x.id), label, `color:${C.ink};text-decoration:none;`)}</td></tr>`;
     })
     .join('');
 
@@ -155,7 +169,7 @@ export function renderIssueEmail(issue: Issue, lang: Lang, site: string, postalA
       const sources = s.sources.map((src) => link(src.url, src.name[lang], `color:${C.graphite};`)).join(lang === 'zh' ? '、' : ', ');
       return `<tr><td style="padding:${i === 0 ? 26 : 30}px 0 4px;border-top:${i === 0 ? 0 : 1}px solid ${C.hairline};">
 ${p(`font:14px/1.3 ${SANS};color:${C.graphite};`, meta)}
-<h2 style="margin:8px 0 10px;font:${s.top ? '600 28px/1.15' : '600 22px/1.25'} ${SERIF};color:${C.ink};">${siteLink(storyUrl(i), s.title[lang], `color:${C.ink};text-decoration:none;`)}</h2>
+<h2 style="margin:8px 0 10px;font:${s.top ? '600 28px/1.15' : '600 22px/1.25'} ${SERIF};color:${C.ink};">${siteLink(storyUrl(s.id), s.title[lang], `color:${C.ink};text-decoration:none;`)}</h2>
 ${p(`font:17px/1.55 ${SERIF};color:${C.ink};`, richHtml(s.summary[lang]))}
 ${visualHtml(s, lang)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr><td style="background:${C.stone};border-radius:4px;padding:14px 16px 16px;">
@@ -164,9 +178,19 @@ ${p(`font:16px/1.5 ${SERIF};color:${C.ink};`, richHtml(s.why[lang]))}
 </td></tr></table>
 ${s.next ? `${p(`font:600 14px/1.3 ${SANS};color:${C.ink};margin-top:14px;margin-bottom:4px;`, esc(t.next))}${p(`font:16px/1.5 ${SERIF};color:${C.ink};`, richHtml(s.next[lang]))}` : ''}
 ${p(`font:14px/1.45 ${SANS};color:${C.graphite};margin-top:14px;`, `${esc(s.sourceLine[lang])} · ${esc(t.sources)}${lang === 'zh' ? '：' : ': '}${sources}`)}
-${p(`font:600 15px/1.4 ${SANS};margin-top:14px;`, `${siteLink(`${storyUrl(i)}#ask`, t.ask, `color:${C.green};`)}&nbsp;&nbsp;&nbsp;${siteLink(storyUrl(i), t.web, `color:${C.ink};font-weight:500;`)}`)}
+${p(`font:600 15px/1.4 ${SANS};margin-top:14px;`, `${siteLink(`${storyUrl(s.id)}#ask`, t.ask, `color:${C.green};`)}&nbsp;&nbsp;&nbsp;${siteLink(storyUrl(s.id), t.web, `color:${C.ink};font-weight:500;`)}`)}
 </td></tr>`;
     })
+    .join('');
+
+  const fixes = corrections
+    .map(
+      (c) => `<tr><td style="padding:10px 0;border-top:1px solid ${C.hairline};">
+${p(`font:13px/1.3 ${SANS};color:${C.graphite};margin-bottom:4px;`, `<span style="color:${C.ink};font-weight:600;">${esc(c.kind === 'withdrawn' ? t.withdrawn : t.corrected)}</span>&nbsp;&nbsp;${esc(dateLine(c.date, lang).label)}`)}
+${p(`font:600 15px/1.45 ${SERIF};color:${C.ink};`, esc(richText(c.title[lang])))}
+${p(`font:15px/1.5 ${SERIF};color:${C.ink};margin-top:4px;`, esc(c.note[lang]))}
+</td></tr>`,
+    )
     .join('');
 
   const briefs = issue.briefs
@@ -190,9 +214,10 @@ ${p(`font:15px/1.4 ${SANS};color:${C.graphite};margin-bottom:22px;`, esc(dek))}
 ${today ? `${p(`font:600 14px/1.3 ${SANS};color:${C.ink};margin-bottom:6px;`, esc(t.todayIn(issue.today.length)))}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${today}</table>` : ''}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">${stories}</table>
 ${briefs ? `<h2 style="margin:30px 0 4px;font:600 22px/1.25 ${SERIF};color:${C.ink};">${esc(t.inBrief)}</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${briefs}</table>` : ''}
+${fixes ? `<h2 style="margin:30px 0 4px;font:600 22px/1.25 ${SERIF};color:${C.ink};">${esc(t.corrections)}</h2>${p(`font:14px/1.45 ${SANS};color:${C.graphite};margin-bottom:6px;`, `${esc(t.correctionsIntro)} ${siteLink(`${base}/${lang}/corrections`, t.corrections)}`)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${fixes}</table>` : ''}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;"><tr><td style="padding-top:20px;border-top:1px solid ${C.hairline};font:12.5px/1.6 ${SANS};color:${C.graphite};">
 ${p('', `${esc(t.footer)} ${siteLink(`${base}/${lang}/about`, t.how)}`)}
-${p('margin-top:8px;', `${esc(t.why_you)} ${siteLink(UNSUBSCRIBE, t.unsubscribe)} · ${siteLink(`${base}/${other}/${issue.date}`, t.other)}`)}
+${p('margin-top:8px;', `${esc(t.why_you)} ${siteLink(UNSUBSCRIBE, t.unsubscribe)} · ${siteLink(`${base}/${lang}/privacy`, t.privacy)} · ${siteLink(`${base}/${other}/${issue.date}`, t.other)}`)}
 ${postalAddress ? p('margin-top:8px;', esc(postalAddress)) : ''}
 </td></tr></table>
 </td></tr></table>
@@ -202,24 +227,28 @@ ${postalAddress ? p('margin-top:8px;', esc(postalAddress)) : ''}
   const lines: string[] = [`AI in 5 · ${d.label}`, dek];
   if (issue.today.length) lines.push('', t.todayIn(issue.today.length).toUpperCase());
   issue.today.forEach((x, n) => lines.push(`${n + 1}. ${richText(x.text[lang])}`));
-  issue.stories.forEach((s, i) => {
+  issue.stories.forEach((s) => {
     lines.push('', '—', `${REGION[s.region][lang]} · ${s.cat[lang]}`, richText(s.title[lang]).toUpperCase(), '', richText(s.summary[lang]), '', `${t.why}: ${richText(s.why[lang])}`);
     if (s.next) lines.push(`${t.next}: ${richText(s.next[lang])}`);
-    lines.push(`${s.sourceLine[lang]}. ${t.sources}: ${s.sources.map((src) => `${src.name[lang]} ${src.url}`).join(' · ')}`, `${t.ask}: ${storyUrl(i)}#ask`);
+    lines.push(`${s.sourceLine[lang]}. ${t.sources}: ${s.sources.map((src) => `${src.name[lang]} ${src.url}`).join(' · ')}`, `${t.ask}: ${storyUrl(s.id)}#ask`);
   });
   if (issue.briefs.length) {
     lines.push('', '—', t.inBrief.toUpperCase());
     issue.briefs.forEach((b) => lines.push(`· ${REGION[b.region][lang]}${b.kind === 'rumor' ? ` (${t.rumor})` : ''}: ${richText(b.text[lang])}`));
   }
-  lines.push('', '—', t.footer, `${t.web}: ${issueUrl}`, `${t.why_you} ${t.unsubscribe}: ${UNSUBSCRIBE}`);
+  if (corrections.length) {
+    lines.push('', '—', t.corrections.toUpperCase(), t.correctionsIntro, `${base}/${lang}/corrections`);
+    corrections.forEach((c) => lines.push(`· ${c.kind === 'withdrawn' ? t.withdrawn : t.corrected} (${dateLine(c.date, lang).label}): ${richText(c.title[lang])}. ${c.note[lang]}`));
+  }
+  lines.push('', '—', t.footer, `${t.web}: ${issueUrl}`, `${t.why_you} ${t.unsubscribe}: ${UNSUBSCRIBE}`, `${t.privacy}: ${base}/${lang}/privacy`);
   if (postalAddress) lines.push(postalAddress);
 
   return { subject, html, text: lines.join('\n') };
 }
 
 /** A short email with one button: the confirmation and the sign-in link share this layout. */
-function renderButtonEmail(lang: Lang, url: string, copy: { subject: string; intro: string; button: string; ignore: string }): RenderedEmail {
-  const { subject, intro, button, ignore } = copy;
+function renderButtonEmail(lang: Lang, url: string, copy: { subject: string; intro: string; button: string; ignore: string; privacy?: { label: string; url: string } }): RenderedEmail {
+  const { subject, intro, button, ignore, privacy } = copy;
   const safe = ownUrl(url) ?? '';
   const html = `<!doctype html>
 <html lang="${lang === 'zh' ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(subject)}</title></head>
@@ -230,16 +259,18 @@ ${p(`font:700 20px/1 ${SERIF};color:${C.ink};`, 'AI in 5')}
 ${p(`font:17px/1.55 ${SERIF};color:${C.ink};margin-top:18px;`, esc(intro))}
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0;"><tr><td style="background:${C.ink};border-radius:4px;"><a href="${esc(safe)}" style="display:inline-block;padding:12px 20px;font:600 16px/1 ${SANS};color:${C.paper};text-decoration:none;">${esc(button)}</a></td></tr></table>
 ${p(`font:13px/1.5 ${SANS};color:${C.graphite};`, esc(ignore))}
+${privacy ? p(`font:13px/1.5 ${SANS};color:${C.graphite};margin-top:10px;`, siteLink(privacy.url, privacy.label, `color:${C.graphite};`)) : ''}
 </td></tr></table>
 </td></tr></table>
 </body></html>`;
-  const text = `AI in 5\n\n${intro}\n\n${button}: ${safe}\n\n${ignore}`;
+  const text = `AI in 5\n\n${intro}\n\n${button}: ${safe}\n\n${ignore}${privacy ? `\n\n${privacy.label}: ${privacy.url}` : ''}`;
   return { subject, html, text };
 }
 
-export function renderConfirmEmail(lang: Lang, confirmUrl: string): RenderedEmail {
+export function renderConfirmEmail(lang: Lang, confirmUrl: string, privacyUrl?: string): RenderedEmail {
   const zh = lang === 'zh';
   return renderButtonEmail(lang, confirmUrl, {
+    privacy: privacyUrl ? { label: zh ? '我们如何处理你的邮箱地址：隐私政策' : 'How we handle your address: privacy policy', url: privacyUrl } : undefined,
     subject: zh ? '请确认订阅 AI in 5' : 'Confirm your AI in 5 subscription',
     intro: zh
       ? '只差一步：点下面的按钮确认邮箱，之后每天早上 7 点（你的当地时间），你会收到当天的 AI in 5。'

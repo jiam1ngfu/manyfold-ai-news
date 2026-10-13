@@ -52,6 +52,17 @@ type Copy = {
   answerFoot: string;
   report: string;
   reported: string;
+  reportPlaceholder: string;
+  reportSend: string;
+  cancel: string;
+  shareStory: string;
+  corrected: string;
+  correctedNote: (date: string) => string;
+  withdrawn: string;
+  withdrawnTitle: string;
+  survey: string;
+  surveyAnswers: Record<'very' | 'somewhat' | 'not', string>;
+  surveyThanks: string;
   inBrief: string;
   rumorTag: string;
   doneTitle: string;
@@ -67,6 +78,8 @@ type Copy = {
   subConfirmed: string;
   subAgain: string;
   subFailed: string;
+  subCheck: string;
+  privacy: string;
   confirmWorking: string;
   confirmedTitle: string;
   confirmedText: string;
@@ -82,6 +95,10 @@ type Copy = {
   unsubDoneTitle: string;
   unsubDoneText: string;
   unsubFailedText: string;
+  unsubErase: string;
+  unsubEraseNote: string;
+  erasedTitle: string;
+  erasedText: string;
   share: string;
   shared: string;
   previous: string;
@@ -121,6 +138,13 @@ type Copy = {
   issueNumber: (n: number) => string;
   aboutTitle: string;
   about: { heading: string; body: string[] }[];
+  correctionsTitle: string;
+  correctionsIntro: string;
+  correctionsEmpty: string;
+  readStory: string;
+  readIssue: string;
+  draftBanner: string;
+  languageLabel: string;
 };
 
 export const COPY: Record<Lang, Copy> = {
@@ -141,7 +165,18 @@ export const COPY: Record<Lang, Copy> = {
     status: { answered: 'Answered from the sources', partial: 'Partly covered by the sources', none: 'Not covered by the sources' },
     answerFoot: 'AI answer, checked against this story’s sources.',
     report: 'Report a problem',
-    reported: 'Thanks. This will be rechecked.',
+    reported: 'Thanks. A person will check this against the sources.',
+    reportPlaceholder: 'What’s wrong? (optional)',
+    reportSend: 'Send report',
+    cancel: 'Cancel',
+    shareStory: 'Share',
+    corrected: 'Corrected',
+    correctedNote: (date) => `Corrected ${date}`,
+    withdrawn: 'Withdrawn',
+    withdrawnTitle: 'Withdrawn from this issue',
+    survey: 'How would you feel if you could no longer read AI in 5?',
+    surveyAnswers: { very: 'Very disappointed', somewhat: 'Somewhat disappointed', not: 'Not disappointed' },
+    surveyThanks: 'Thank you. That helps us decide what to build.',
     inBrief: 'In brief',
     rumorTag: 'Rumor, unconfirmed',
     doneTitle: 'You’re caught up.',
@@ -157,6 +192,8 @@ export const COPY: Record<Lang, Copy> = {
     subConfirmed: 'You’re subscribed. The next issue arrives at 7:00, your local time.',
     subAgain: 'Didn’t get our email, or on a new device? Enter your address again.',
     subFailed: 'That didn’t work. Check the address and try again.',
+    subCheck: 'We couldn’t confirm you’re not a bot. Wait a moment and try again.',
+    privacy: 'Privacy',
     confirmWorking: 'Confirming your subscription…',
     confirmedTitle: 'You’re subscribed',
     confirmedText: 'The next issue arrives at 7:00, your local time. Every email has a one-click unsubscribe link.',
@@ -172,6 +209,10 @@ export const COPY: Record<Lang, Copy> = {
     unsubDoneTitle: 'You’re unsubscribed',
     unsubDoneText: 'You won’t hear from us again. If you change your mind, subscribe on any issue.',
     unsubFailedText: 'Reply to any of our emails and we’ll take you off the list by hand.',
+    unsubErase: 'Unsubscribe and delete my data',
+    unsubEraseNote: 'Deleting also removes your questions and our record of which issues you opened. It can’t be undone.',
+    erasedTitle: 'Your data is deleted',
+    erasedText: 'Your address and everything linked to it are gone. You won’t hear from us again.',
     share: 'Share this issue',
     shared: 'Link copied',
     previous: 'Read the previous issue',
@@ -215,7 +256,7 @@ export const COPY: Record<Lang, Copy> = {
         heading: 'Written by AI, checked against the source',
         body: [
           'AI in 5 is written by AI. Every morning it reads official announcements, research papers and leading outlets from the US, China and Europe, picks the stories that matter and writes them in plain language.',
-          'No person reviews each issue. Instead, every story passes three checks before it is published, and anything that fails is cut. A shorter issue beats a wrong one.',
+          'No person reviews each issue before it goes out. Instead, every story passes three checks before it is published, and anything that fails is cut. A shorter issue beats a wrong one. A person reads every problem report and spot-checks issues every week.',
         ],
       },
       {
@@ -240,9 +281,22 @@ export const COPY: Record<Lang, Copy> = {
       },
       {
         heading: 'Corrections',
-        body: ['When something is wrong, the story is marked as corrected and the change is explained here. There are no corrections yet.'],
+        body: [
+          'When something is wrong, we fix the story and mark it “Corrected”, with what changed. A story that can’t be fixed is withdrawn. Both are listed on the corrections page, and the next email tells subscribers about them.',
+        ],
+      },
+      {
+        heading: 'Who makes it',
+        body: ['AI in 5 is published by NetMind.AI Ltd, the company behind Manyfold, which runs the AI agents that write, review and answer. Write to customer-support@netmind.ai.'],
       },
     ],
+    correctionsTitle: 'Corrections',
+    correctionsIntro: 'When a story is wrong we fix it, mark it on the story and list it here. A story that can’t be fixed is withdrawn from its issue.',
+    correctionsEmpty: 'No corrections so far.',
+    readStory: 'Read the story',
+    readIssue: 'Read the issue',
+    draftBanner: 'Draft preview. Readers can’t see this issue until it is published in /admin.',
+    languageLabel: 'Language',
   },
   zh: {
     coverageLabel: '今天的新闻来自哪里',
@@ -261,7 +315,18 @@ export const COPY: Record<Lang, Copy> = {
     status: { answered: '来源中有答案', partial: '来源只提到一部分', none: '来源中没有提到' },
     answerFoot: 'AI 回答，已与本条来源核对。',
     report: '报错',
-    reported: '收到，会重新核对。',
+    reported: '收到，会有人对照来源核对。',
+    reportPlaceholder: '哪里有问题？（选填）',
+    reportSend: '提交',
+    cancel: '取消',
+    shareStory: '分享',
+    corrected: '已更正',
+    correctedNote: (date) => `${date}更正`,
+    withdrawn: '已撤下',
+    withdrawnTitle: '本期撤下的内容',
+    survey: '如果以后再也看不到 AI in 5，你会有什么感觉？',
+    surveyAnswers: { very: '非常失望', somewhat: '有点失望', not: '不会失望' },
+    surveyThanks: '谢谢，这能帮我们决定接下来做什么。',
     inBrief: '快讯',
     rumorTag: '传闻，未证实',
     doneTitle: '今天的 AI，你已经跟上了。',
@@ -277,6 +342,8 @@ export const COPY: Record<Lang, Copy> = {
     subConfirmed: '你已订阅。下一期会在你当地时间早上 7 点送到。',
     subAgain: '没收到邮件，或者换了设备？再输入一次邮箱。',
     subFailed: '没有成功，请检查邮箱地址后重试。',
+    subCheck: '没能确认你不是机器人，请稍等片刻再试。',
+    privacy: '隐私政策',
     confirmWorking: '正在确认订阅…',
     confirmedTitle: '订阅成功',
     confirmedText: '下一期会在你当地时间早上 7 点送到。每封邮件底部都能一键退订。',
@@ -292,6 +359,10 @@ export const COPY: Record<Lang, Copy> = {
     unsubDoneTitle: '已退订',
     unsubDoneText: '我们不会再给你发邮件。想回来的话，在任何一期页面上重新订阅就行。',
     unsubFailedText: '回复我们任意一封邮件，我们会手动帮你退订。',
+    unsubErase: '退订并删除我的数据',
+    unsubEraseNote: '删除后，你提过的问题和我们记录的阅读情况也会一并删除，无法恢复。',
+    erasedTitle: '你的数据已删除',
+    erasedText: '你的邮箱地址以及与之相关的所有记录都已删除。我们不会再给你发邮件。',
     share: '分享这期',
     shared: '链接已复制',
     previous: '看上一期',
@@ -335,7 +406,7 @@ export const COPY: Record<Lang, Copy> = {
         heading: '由 AI 撰写，并与原始来源核对',
         body: [
           'AI in 5 由 AI 撰写。每天早上，它阅读美国、中国和欧洲的官方公告、研究论文和一线媒体报道，挑出真正重要的新闻，用大白话写出来。',
-          '每一期都没有人工逐条审稿。取而代之的是，每条新闻发布前都要通过三道审核，任何一道不通过就删掉。宁可这一期少一条，也不发错的。',
+          '每一期发出前都没有人工逐条审稿。取而代之的是，每条新闻发布前都要通过三道审核，任何一道不通过就删掉。宁可这一期少一条，也不发错的。读者的每一条报错都会有人看，每周也会有人抽查。',
         ],
       },
       {
@@ -360,9 +431,20 @@ export const COPY: Record<Lang, Copy> = {
       },
       {
         heading: '更正记录',
-        body: ['发现错误时，会在原条目上标注"已更正"，并在这里说明改了什么。目前还没有更正。'],
+        body: ['发现错误时，我们会修改原条目并标注"已更正"，写明改了什么；无法修正的会整条撤下。两种情况都会列在更正记录页，并在下一封邮件里告诉订阅者。'],
+      },
+      {
+        heading: '谁在做',
+        body: ['AI in 5 由 NetMind.AI Ltd 出品，也就是 Manyfold 背后的公司；撰写、审核和回答问题的 AI 智能体都运行在 Manyfold 上。联系我们：customer-support@netmind.ai。'],
       },
     ],
+    correctionsTitle: '更正记录',
+    correctionsIntro: '新闻出错时，我们会修改原条目、在条目上标注，并列在这里。无法修正的会从那一期撤下。',
+    correctionsEmpty: '目前还没有更正。',
+    readStory: '查看这条新闻',
+    readIssue: '查看这一期',
+    draftBanner: '草稿预览。在 /admin 发布之前，读者看不到这一期。',
+    languageLabel: '语言',
   },
 };
 

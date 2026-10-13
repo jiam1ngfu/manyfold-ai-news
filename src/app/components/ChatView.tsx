@@ -103,11 +103,11 @@ export default function ChatView(props: {
       <section className="panel">
         <h2>Connect your first agent</h2>
         <p className="muted">
-          This starter talks to agents you host on{' '}
+          AI in 5 talks to agents you host on{' '}
           <a href="https://manyfold.ai" target="_blank" rel="noreferrer">
             Manyfold
           </a>
-          . Connect one, then verify the wiring by chatting with it right here.
+          . Connect the writer, the reviewer and the answerer, then check each one by chatting with it here.
         </p>
         <ConnectPanel initialSession={props.initialSession} onConnected={props.refreshState} />
       </section>

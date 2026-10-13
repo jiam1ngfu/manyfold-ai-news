@@ -207,3 +207,17 @@ Reply with JSON only: an object with the same keys and the Chinese text as value
 
 ${json(entries)}`;
 }
+
+/**
+ * The one extra turn a step gets when its reply is not valid JSON even after jsonrepair:
+ * the agent's own reply comes back with the parser's complaint, and only the syntax may
+ * change. Whatever it returns still goes through every check.
+ */
+export function repairPrompt(reply: string, problem: string): string {
+  return `Your previous reply below was meant to be one JSON object, but it is not valid JSON. The parser said: ${problem}
+
+Return the same JSON object with only its syntax fixed: escape quotes inside strings, close every bracket, remove trailing commas. Do not change, add or remove any words, numbers, quotes, URLs or items. Reply with the JSON object only, no prose and no code fence.
+
+Previous reply:
+${reply}`;
+}

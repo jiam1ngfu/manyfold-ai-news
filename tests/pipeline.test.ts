@@ -1,15 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NO_IMAGE_HOSTS, parseFeed, parseNewsroom, type Candidate } from '../src/worker/pipeline/feeds';
 import { looksLikeDefaultImage } from '../src/worker/pipeline/snapshot';
 import { canonical, checkDraft, checkStory, extraQuantities, numbersIn, pinOfficial, quantities, quoteFound } from '../src/worker/pipeline/checks';
 import { extractJson, readDraft, repairMarkers, type Draft, type DraftStory } from '../src/worker/pipeline/draft';
 import { assembleIssue, checkTranslation, sourceLine, translationEntries } from '../src/worker/pipeline/assemble';
-import { extraSource, issueDateFor, itemUrls, windowFor } from '../src/worker/pipeline/run';
+import { claimRun, extraSource, issueDateFor, itemUrls, retryIfFailed, runPipeline, windowFor } from '../src/worker/pipeline/run';
 import { applyReview, readReview } from '../src/worker/pipeline/review';
 import { reviewPrompt, selectPrompt, writePrompt } from '../src/worker/pipeline/prompts';
 import { ORGS, findOrg, orgKey } from '../src/worker/pipeline/orgs';
 import { LOGOS } from '../src/worker/pipeline/logo-data';
 import { validateIssue, type SourceKind } from '../src/shared/issue';
+import type { Env } from '../src/worker/types';
 
 const SOURCE_EN =
   'Today we are releasing Q3. Running cost is about one-eighth that of comparable closed models, and the full model needs eight 80GB GPUs. ' +
@@ -487,5 +489,64 @@ describe('schedule', () => {
     const window = windowFor('2026-10-12', at);
     expect((window.to.getTime() - window.from.getTime()) / 3_600_000).toBe(72);
     expect(issueDateFor(new Date('2026-10-12T10:00:00Z'))).toBe('2026-10-12');
+  });
+});
+
+/** Just enough of D1 over node:sqlite to run the pipeline's own SQL. Each call yields, like D1. */
+function sqliteD1(): D1Database {
+  const db = new DatabaseSync(':memory:');
+  type Value = null | number | string;
+  const statement = (sql: string, params: Value[] = []) => ({
+    bind: (...args: Value[]) => statement(sql, args),
+    first: async () => db.prepare(sql).get(...params) ?? null,
+    all: async () => ({ results: db.prepare(sql).all(...params) }),
+    run: async () => ({ meta: { changes: Number(db.prepare(sql).run(...params).changes) } }),
+  });
+  return {
+    prepare: (sql: string) => statement(sql),
+    batch: async (statements: ReturnType<typeof statement>[]) => {
+      const results = [];
+      for (const s of statements) results.push(await s.run());
+      return results;
+    },
+  } as unknown as D1Database;
+}
+
+describe('scheduled runs', () => {
+  // One database for the block: ensureSchema runs once per isolate. With no agent
+  // connected, every run fails at its first step, before any network call or billing.
+  const env = { DB: sqliteD1() } as Env;
+  const rows = async (issueDate: string) =>
+    (await env.DB.prepare('SELECT id, trigger FROM pipeline_runs WHERE issue_date = ? ORDER BY id').bind(issueDate).all<{ id: string; trigger: string }>()).results;
+  beforeAll(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterAll(() => vi.restoreAllMocks());
+
+  it('a cron that fires twice runs once, even when the two race', async () => {
+    const at = new Date('2026-10-12T19:30:00Z');
+    const [a, b] = await Promise.all([runPipeline(env, { trigger: 'cron', at }), runPipeline(env, { trigger: 'cron', at })]);
+    expect([a, b].filter(Boolean)).toHaveLength(1);
+    expect(await runPipeline(env, { trigger: 'cron', at: new Date('2026-10-12T19:30:04Z') })).toBeNull();
+    expect(await rows('2026-10-13')).toEqual([{ id: '2026-10-13-1', trigger: 'cron' }]);
+  });
+
+  it('manual runs always open a new row, and the retry still runs once', async () => {
+    const date = '2026-10-14';
+    expect((await runPipeline(env, { trigger: 'cron', at: new Date('2026-10-13T19:30:00Z') }))?.status).toBe('failed');
+    expect((await runPipeline(env, { trigger: 'manual', issueDate: date }))?.runId).toBe(`${date}-2`);
+    expect((await runPipeline(env, { trigger: 'manual', issueDate: date }))?.runId).toBe(`${date}-3`);
+    // The retry fires twice; the first fails fast, so the second sees a failed last run.
+    await retryIfFailed(env, new Date('2026-10-13T20:30:00Z'));
+    await retryIfFailed(env, new Date('2026-10-13T20:30:04Z'));
+    expect((await rows(date)).map((r) => r.trigger)).toEqual(['cron', 'manual', 'manual', 'retry']);
+  });
+
+  it('claims per trigger and per issue date', async () => {
+    expect(await claimRun(env, '2026-10-15', 'retry')).toBe('2026-10-15-1');
+    expect(await claimRun(env, '2026-10-15', 'cron')).toBe('2026-10-15-2');
+    expect(await claimRun(env, '2026-10-15', 'cron')).toBeNull();
+    expect(await claimRun(env, '2026-10-16', 'cron')).toBe('2026-10-16-1');
   });
 });
