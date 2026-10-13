@@ -1,7 +1,8 @@
 /**
- * Signed tokens for the links in our emails: confirm a subscription, unsubscribe, and the
- * ask key a subscriber's browser keeps to ask their own questions. Nothing is stored per
- * link; the token carries the address and an HMAC-SHA256 tag.
+ * Signed tokens for the links in our emails: confirm a subscription, sign in on another
+ * device, unsubscribe, and the ask key a subscriber's browser keeps to ask their own
+ * questions. Nothing is stored per link; the token carries the address and an
+ * HMAC-SHA256 tag.
  *
  * The signing key is its own random value in `settings`, deliberately separate from
  * CONFIG_ENCRYPTION_KEY: an unsubscribe link in an email sent months ago must keep
@@ -16,9 +17,9 @@ const KEY_SETTING = 'link_signing_key';
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export type TokenKind = 'confirm' | 'unsubscribe' | 'ask';
+export type TokenKind = 'confirm' | 'signin' | 'unsubscribe' | 'ask';
 
-const CODE: Record<TokenKind, string> = { confirm: 'c', unsubscribe: 'u', ask: 'a' };
+const CODE: Record<TokenKind, string> = { confirm: 'c', signin: 's', unsubscribe: 'u', ask: 'a' };
 
 export interface TokenPayload {
   kind: TokenKind;
@@ -83,6 +84,12 @@ const CONFIRM_DAYS = 14;
 
 export const confirmToken = async (env: Env, email: string): Promise<string> =>
   signWith(await signingKey(env), { kind: 'confirm', email, exp: Math.floor(Date.now() / 1000) + CONFIRM_DAYS * 86400 });
+
+export const SIGNIN_MINUTES = 30;
+
+/** Short-lived: it is traded once for an ask key, on the device the reader opens it on. */
+export const signInToken = async (env: Env, email: string): Promise<string> =>
+  signWith(await signingKey(env), { kind: 'signin', email, exp: Math.floor(Date.now() / 1000) + SIGNIN_MINUTES * 60 });
 
 export const unsubscribeToken = async (env: Env, email: string): Promise<string> => signWith(await signingKey(env), { kind: 'unsubscribe', email });
 

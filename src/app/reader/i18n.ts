@@ -65,12 +65,17 @@ type Copy = {
   subFine: string;
   subDone: string;
   subConfirmed: string;
+  subAgain: string;
   subFailed: string;
   confirmWorking: string;
   confirmedTitle: string;
   confirmedText: string;
   linkFailedTitle: string;
   confirmFailedText: string;
+  signInWorking: string;
+  signedInTitle: string;
+  signedInText: string;
+  signInFailedText: string;
   unsubTitle: string;
   unsubText: string;
   unsubButton: string;
@@ -91,6 +96,7 @@ type Copy = {
   close: string;
   gateText: string;
   gateButton: string;
+  gateFine: string;
   askPlaceholder: string;
   askButton: string;
   quota: (n: number) => string;
@@ -99,6 +105,7 @@ type Copy = {
   answeringHint: string;
   askTry: string;
   askNeedKey: string;
+  signOut: string;
   askLimit: string;
   askPaused: string;
   askFailed: string;
@@ -145,14 +152,19 @@ export const COPY: Record<Lang, Copy> = {
     subLabel: 'Get it in your inbox every morning',
     subButton: 'Subscribe',
     subFine: 'One email a day. Unsubscribe in one click.',
-    subDone: 'Almost done: check your inbox and click the link to confirm.',
+    subDone: 'Almost done: check your inbox and open the link in our email on this device.',
     subConfirmed: 'You’re subscribed. The next issue arrives at 7:00, your local time.',
+    subAgain: 'Didn’t get our email, or on a new device? Enter your address again.',
     subFailed: 'That didn’t work. Check the address and try again.',
     confirmWorking: 'Confirming your subscription…',
     confirmedTitle: 'You’re subscribed',
     confirmedText: 'The next issue arrives at 7:00, your local time. Every email has a one-click unsubscribe link.',
     linkFailedTitle: 'This link didn’t work',
     confirmFailedText: 'It may have expired. Subscribe again and we’ll send a fresh link.',
+    signInWorking: 'Signing you in…',
+    signedInTitle: 'You can ask on this device',
+    signedInText: 'Open any story and tap “Ask your own question”. This device stays signed in until you sign out.',
+    signInFailedText: 'Sign-in links work for 30 minutes. Enter your address under any story and we’ll send a new one.',
     unsubTitle: 'Unsubscribe from AI in 5?',
     unsubText: 'You won’t get the daily email any more. The site stays open to read.',
     unsubButton: 'Unsubscribe',
@@ -173,6 +185,7 @@ export const COPY: Record<Lang, Copy> = {
     close: 'Close',
     gateText: 'Asking your own questions is free for subscribers. You’ll also get each issue at 7:00, your local time.',
     gateButton: 'Subscribe',
+    gateFine: 'Already subscribed? Enter the same address and we’ll email you a link to ask on this device.',
     askPlaceholder: 'Ask about this story',
     askButton: 'Ask',
     quota: (n) => `${n} ${n === 1 ? 'question' : 'questions'} left today`,
@@ -180,7 +193,8 @@ export const COPY: Record<Lang, Copy> = {
     answering: 'Reading the sources…',
     answeringHint: 'Usually 10 to 30 seconds.',
     askTry: 'Or start with one of these:',
-    askNeedKey: 'To ask on this device, open “Ask about this story” from any AI in 5 email.',
+    askNeedKey: 'This device isn’t signed in any more. Enter your address and we’ll email you a new link.',
+    signOut: 'Sign out on this device',
     askLimit: 'You’ve asked your 10 questions for today. More tomorrow.',
     askPaused: 'Asking is paused right now. Try again later.',
     askFailed: 'Something went wrong. Try again.',
@@ -257,14 +271,19 @@ export const COPY: Record<Lang, Copy> = {
     subLabel: '每天早上送到你的邮箱',
     subButton: '订阅',
     subFine: '每天只有 1 封，随时一键退订。',
-    subDone: '还差一步：请到邮箱里点确认链接。',
+    subDone: '还差一步：去邮箱查收，并在这台设备上打开邮件里的链接。',
     subConfirmed: '你已订阅。下一期会在你当地时间早上 7 点送到。',
+    subAgain: '没收到邮件，或者换了设备？再输入一次邮箱。',
     subFailed: '没有成功，请检查邮箱地址后重试。',
     confirmWorking: '正在确认订阅…',
     confirmedTitle: '订阅成功',
     confirmedText: '下一期会在你当地时间早上 7 点送到。每封邮件底部都能一键退订。',
     linkFailedTitle: '这个链接无效',
     confirmFailedText: '链接可能已经过期。重新订阅一次，我们会再发一封确认邮件。',
+    signInWorking: '正在登录…',
+    signedInTitle: '这台设备可以提问了',
+    signedInText: '打开任意一条新闻，点“自己提问”就行。退出之前，这台设备会一直保持登录。',
+    signInFailedText: '登录链接 30 分钟内有效。在任意一条新闻下输入邮箱，我们会再发一个。',
     unsubTitle: '退订 AI in 5？',
     unsubText: '退订后不再收到每日邮件，网站照常可以看。',
     unsubButton: '确认退订',
@@ -285,6 +304,7 @@ export const COPY: Record<Lang, Copy> = {
     close: '关闭',
     gateText: '订阅后即可免费自己提问。每天早上 7 点（当地时间），你还会收到当天的简报。',
     gateButton: '订阅',
+    gateFine: '已经订阅了？输入同一个邮箱，我们会发一个链接，让你在这台设备上提问。',
     askPlaceholder: '输入关于这条新闻的问题',
     askButton: '提问',
     quota: (n) => `今天还可以问 ${n} 次`,
@@ -292,7 +312,8 @@ export const COPY: Record<Lang, Copy> = {
     answering: '正在根据来源作答…',
     answeringHint: '通常需要 10–30 秒。',
     askTry: '也可以先看看这些问题：',
-    askNeedKey: '要在这台设备上提问，请从任意一封 AI in 5 邮件里点开“就这条新闻提问”。',
+    askNeedKey: '这台设备的登录已失效。输入邮箱，我们会给你发一个新链接。',
+    signOut: '在这台设备上退出',
     askLimit: '今天的 10 次提问已用完，明天再来。',
     askPaused: '提问暂时关闭，请稍后再试。',
     askFailed: '出了点问题，请再试一次。',

@@ -44,12 +44,16 @@ The template is designed to be extended and reshaped; these are the load-bearing
    `/api/state` and the reader routes without a reason as good as theirs. The reader routes
    are the public site itself (`isReaderRoute` in `src/worker/index.ts`): `GET /api/issues*`
    serves published issues only (read-only, cacheable, no agent calls, no credentials), and
-   `POST /api/subscribe`, `/api/subscribe/confirm`, `/api/unsubscribe`, `/api/ask`,
-   `/api/feedback` and `/api/reports` (and `GET /api/ask/:id`) validate strictly and are
-   throttled per salted IP hash. A reader route must never call an agent or touch a
-   secret itself, with two exceptions: `/api/subscribe` uses the mail provider key to send
-   a rate-limited confirmation to the address just submitted, and `/api/ask` queues a
-   confirmed subscriber's question for the answer agent (rule 12).
+   `POST /api/subscribe`, `/api/subscribe/confirm`, `/api/subscribe/signin`,
+   `/api/unsubscribe`, `/api/ask`, `/api/feedback` and `/api/reports` (and
+   `GET /api/ask/:id`) validate strictly and are throttled per salted IP hash. A reader
+   route must never call an agent or touch a secret itself, with two exceptions:
+   `/api/subscribe` uses the mail provider key to send the address just submitted a
+   rate-limited email (a confirmation if it is pending, a 30-minute sign-in link if it is
+   already confirmed, the same response either way), and `/api/ask` queues a confirmed
+   subscriber's question for the answer agent (rule 12). There are no reader accounts or
+   passwords: a browser can ask once it holds an ask key, from the confirmation link, a
+   sign-in link or any issue email.
    `/api/unsubscribe` is also the only mutation exempt from the same-origin check, because
    mail providers send the one-click List-Unsubscribe POST from their own servers; it acts
    only on the signed token in its URL.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { importSigningKey, signWith, verifyWith } from '../src/worker/email/tokens';
 import { dueByDate, localClock } from '../src/worker/email/deliver';
-import { ASK_KEY, renderConfirmEmail, renderIssueEmail, UNSUBSCRIBE } from '../src/worker/email/render';
+import { ASK_KEY, renderConfirmEmail, renderIssueEmail, renderSignInEmail, UNSUBSCRIBE } from '../src/worker/email/render';
 import { SAMPLE_ISSUE } from '../src/worker/sample-issue';
 import { validateIssue, type Issue } from '../src/shared/issue';
 
@@ -18,6 +18,18 @@ describe('link tokens', () => {
     expect(await verifyWith(key, confirm, 'confirm', 999_000)).toBe('a@example.com');
     expect(await verifyWith(key, confirm, 'confirm', 1_001_000)).toBeNull();
     expect(await verifyWith(key, 'not-a-token', 'confirm')).toBeNull();
+  });
+
+  it('keeps a sign-in link apart from the other kinds, and lets it expire', async () => {
+    const key = await importSigningKey('material-one');
+    const signin = await signWith(key, { kind: 'signin', email: 'a@example.com', exp: 1_800 });
+    expect(await verifyWith(key, signin, 'signin', 1_000_000)).toBe('a@example.com');
+    expect(await verifyWith(key, signin, 'signin', 1_801_000)).toBeNull();
+    // A sign-in link is not an ask key, and an ask key from an old email is not a sign-in link.
+    expect(await verifyWith(key, signin, 'ask', 1_000_000)).toBeNull();
+    expect(await verifyWith(key, signin, 'confirm', 1_000_000)).toBeNull();
+    const ask = await signWith(key, { kind: 'ask', email: 'a@example.com' });
+    expect(await verifyWith(key, ask, 'signin')).toBeNull();
   });
 
   it('cannot be edited to point at another address', async () => {
@@ -104,5 +116,23 @@ describe('confirmation email', () => {
     expect(email.subject).toContain('确认');
     expect(email.html).toContain(url);
     expect(email.text).toContain(url);
+  });
+});
+
+describe('sign-in email', () => {
+  it('carries the link in both versions and says how long it works', () => {
+    for (const lang of ['en', 'zh'] as const) {
+      const url = `https://aiin5.example/${lang}/signin?t=abc.def`;
+      const email = renderSignInEmail(lang, url, 30);
+      expect(email.html).toContain(url);
+      expect(email.text).toContain(url);
+      expect(email.text).toContain('30');
+    }
+    expect(renderSignInEmail('zh', 'https://aiin5.example/zh/signin?t=x', 30).subject).toContain('登录');
+  });
+
+  it('drops a link that is not a web address', () => {
+    const email = renderSignInEmail('en', 'javascript:alert(1)', 30);
+    expect(email.html).not.toContain('javascript:');
   });
 });

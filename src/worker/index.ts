@@ -17,8 +17,10 @@
  *   GET    /api/issues/latest?before=DATE   open   newest published issue on or before DATE
  *   GET    /api/issues                      open   published issues, newest first (archive)
  *   GET    /api/issues/:date                open   one published issue
- *   POST   /api/subscribe                   open   join the email list; sends the confirmation (throttled)
+ *   POST   /api/subscribe                   open   join the email list; sends the confirmation, or a
+ *                                                  confirmed subscriber's sign-in link (throttled)
  *   POST   /api/subscribe/confirm           open   the confirmation link (signed token)
+ *   POST   /api/subscribe/signin            open   the sign-in link: this browser's ask key (signed token)
  *   POST   /api/unsubscribe                 open   the unsubscribe link and one-click header (signed token)
  *   POST   /api/ask                         open   a subscriber's own question (ask key; queued, billed)
  *   GET    /api/ask/:id                     open   that question's checked answer, once ready
@@ -66,8 +68,8 @@ import { getConversation, handleChatTurn, resetConversation } from './chat';
 import { IssueValidationError } from '../shared/issue';
 import { getAnyIssue, getIssue, getLatestIssue, listAllIssues, listIssues, saveIssue, seedSampleIssue, setIssueStatus } from './issues';
 import { RETRY_CRON, checkSources, getRun, listRuns, retryIfFailed, reviewerAgentId, runPipeline, setReviewerAgent, setWriterAgent, writerAgentId } from './pipeline/run';
-import { clientKey, confirmSubscription, isEmail, recordFeedback, recordReport, subscribe, unsubscribe } from './public';
-import { deliverDue, emailStatus, previewIssueEmail, sendConfirmation, sendTest } from './email/deliver';
+import { clientKey, confirmSubscription, isEmail, recordFeedback, recordReport, signIn, subscribe, unsubscribe } from './public';
+import { deliverDue, emailStatus, previewIssueEmail, sendLinkEmail, sendTest } from './email/deliver';
 import { answererAgentId, askOverview, askQuestion, getQuestion, processQuestion, setAnswererAgent, setAskSettings, type AskMessage } from './ask/questions';
 import { BASE_PATH, stripBase } from '../shared/base';
 
@@ -118,8 +120,9 @@ const adminHeaderOk = (c: { env: Env; req: { header: (name: string) => string | 
 // (read-only, cacheable, no agent calls, no credentials) and throttled, strictly
 // validated writes. None of them calls an agent itself: a subscriber's question is
 // stored and queued, and the queue consumer makes the one billed turn. The only secret
-// any of them uses is the mail provider key, to confirm the address just submitted.
-const READER_POSTS = new Set(['/api/subscribe', '/api/subscribe/confirm', '/api/unsubscribe', '/api/feedback', '/api/reports', '/api/ask']);
+// any of them uses is the mail provider key, to email the address just submitted its
+// confirmation or sign-in link.
+const READER_POSTS = new Set(['/api/subscribe', '/api/subscribe/confirm', '/api/subscribe/signin', '/api/unsubscribe', '/api/feedback', '/api/reports', '/api/ask']);
 const isReaderRoute = (method: string, path: string): boolean =>
   (method === 'GET' && (path === '/api/issues' || path.startsWith('/api/issues/') || path.startsWith('/api/ask/'))) ||
   (method === 'POST' && READER_POSTS.has(path));
@@ -251,13 +254,16 @@ const client = (c: { env: Env; req: { header: (name: string) => string | undefin
   clientKey(c.env, c.req.header('cf-connecting-ip'));
 
 app.post('/api/subscribe', async (c) => {
-  const pending = await subscribe(c.env, await readBody(c), await client(c));
-  // Sent after the response, so the reader never waits on the mail provider.
-  if (pending) c.executionCtx.waitUntil(sendConfirmation(c.env, pending.email, pending.lang, siteFromRequest(c.req.url)));
+  const link = await subscribe(c.env, await readBody(c), await client(c));
+  // Sent after the response, so the reader never waits on the mail provider, and the
+  // response is the same whichever email (if any) goes out.
+  if (link) c.executionCtx.waitUntil(sendLinkEmail(c.env, link.kind, link.email, link.lang, siteFromRequest(c.req.url)));
   return c.json({ ok: true });
 });
 
 app.post('/api/subscribe/confirm', async (c) => c.json({ ok: true, ...(await confirmSubscription(c.env, await readBody(c), await client(c))) }));
+
+app.post('/api/subscribe/signin', async (c) => c.json({ ok: true, ...(await signIn(c.env, await readBody(c), await client(c))) }));
 
 // Both the page's button (JSON body) and the mail provider's one-click POST (form body,
 // token in the URL) land here.

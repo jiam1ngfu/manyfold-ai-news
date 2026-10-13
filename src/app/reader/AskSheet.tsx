@@ -3,9 +3,9 @@
  *
  * A confirmed subscriber whose browser holds an ask key types a question; the answer
  * comes back checked against the story's sources, usually in 10 to 30 seconds, and the
- * conversation stays for the rest of the visit. A subscriber without a key on this
- * device is told how to get one; everyone else sees the one-field gate. The story's
- * preset questions are always offered as a starting point.
+ * conversation stays for the rest of the visit. Without a key everyone sees the
+ * one-field gate: it subscribes a new reader, and emails a subscriber a sign-in link for
+ * this device. The story's preset questions are always offered as a starting point.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -13,7 +13,7 @@ import type { AskPreset, Issue, Lang, Story } from '../../shared/issue';
 import { COPY } from './i18n';
 import { Answer, AskList } from './Story';
 import SubscribeForm from './Subscribe';
-import { ReaderError, askKey, askQuestion, useSubscribed, waitForAnswer, type OwnAnswer } from './data';
+import { ReaderError, askQuestion, signOut, useSubscribed, waitForAnswer, type OwnAnswer } from './data';
 
 interface Entry {
   id: string | null;
@@ -29,8 +29,7 @@ let remainingToday: number | null = null;
 
 export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue; story: Story; lang: Lang; onClose: () => void }) {
   const T = COPY[lang];
-  const subscribed = useSubscribed();
-  const hasKey = Boolean(askKey());
+  const { hasKey } = useSubscribed();
   const sheet = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const threadKey = `${issue.date}/${story.id}`;
@@ -38,6 +37,10 @@ export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue
   const [question, setQuestion] = useState('');
   const [remaining, setRemaining] = useState<number | null>(remainingToday);
   const [blocked, setBlocked] = useState<string | null>(null);
+  // A new key (from the emailed link, maybe opened in another tab) lifts an earlier block.
+  useEffect(() => {
+    if (hasKey) setBlocked(null);
+  }, [hasKey]);
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -90,7 +93,11 @@ export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue
       if (final.answer) settle({ id: final.id, state: 'done', answer: final.answer });
       else settle({ id: final.id, state: 'error', error: T.askFailed });
     } catch (cause) {
-      if (cause instanceof ReaderError && cause.status === 403) setBlocked(T.askNeedKey);
+      // The key no longer works (unsubscribed, or not a key at all): drop it and offer a new link.
+      if (cause instanceof ReaderError && cause.status === 403) {
+        signOut();
+        setBlocked(T.askNeedKey);
+      }
       if (cause instanceof ReaderError && cause.status === 429) {
         remainingToday = 0;
         setRemaining(0);
@@ -101,7 +108,7 @@ export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue
 
   const asPreset = (q: string, answer: OwnAnswer): AskPreset => ({ status: answer.status, q: { en: q, zh: q }, a: { en: answer.a, zh: answer.a }, cites: answer.cites });
   const waiting = thread.some((t) => t.state === 'waiting');
-  const canAsk = subscribed && hasKey && !blocked;
+  const canAsk = hasKey && !blocked;
 
   return (
     <div className="sheet-root">
@@ -163,14 +170,17 @@ export default function AskSheet({ issue, story, lang, onClose }: { issue: Issue
                 {T.askButton}
               </button>
             </div>
-            <p className="quota">{remaining === null ? T.quotaDaily : T.quota(remaining)}</p>
+            <p className="quota">
+              {remaining === null ? T.quotaDaily : T.quota(remaining)}{' '}
+              <button type="button" className="text-btn" onClick={signOut}>
+                {T.signOut}
+              </button>
+            </p>
           </form>
-        ) : subscribed ? (
-          <p className="gate">{blocked ?? T.askNeedKey}</p>
         ) : (
           <div className="gate">
-            <p>{T.gateText}</p>
-            <SubscribeForm lang={lang} source="gate" button={T.gateButton} className="gate-form" />
+            <p>{blocked ?? T.gateText}</p>
+            <SubscribeForm lang={lang} source="gate" button={T.gateButton} fine={T.gateFine} className="gate-form" />
           </div>
         )}
       </div>

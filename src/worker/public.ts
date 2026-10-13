@@ -5,7 +5,8 @@
  * salted SHA-256 of the connecting IP; the IP itself is never stored.
  *
  * Subscribing never reveals whether an address was already on the list: the answer is
- * the same either way, and only a pending address gets a (rate-limited) confirmation.
+ * the same either way. A pending address gets a (rate-limited) confirmation, and a
+ * confirmed one a sign-in link, which is how a subscriber asks from another device.
  */
 
 import { LANGS, type Lang } from '../shared/issue';
@@ -63,8 +64,13 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
 
 export const isEmail = (value: string): boolean => value.length <= 254 && EMAIL.test(value);
 
-/** Returns who needs a confirmation email, if anyone; the caller sends it after responding. */
-export async function subscribe(env: Env, body: Body, client: string): Promise<{ email: string; lang: Lang } | null> {
+/**
+ * Returns who needs which email, if anyone; the caller sends it after responding. Only a
+ * pending address takes the submitted language and time zone: anyone can type a
+ * confirmed subscriber's address, so that must not change where or when their issue
+ * arrives.
+ */
+export async function subscribe(env: Env, body: Body, client: string): Promise<{ email: string; lang: Lang; kind: 'confirm' | 'signin' } | null> {
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!isEmail(email)) throw new HttpError(400, 'invalid_email', 'Enter a valid email address.');
   const timezone = typeof body?.timezone === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(body.timezone) ? body.timezone : 'UTC';
@@ -75,13 +81,19 @@ export async function subscribe(env: Env, body: Body, client: string): Promise<{
   // Someone who unsubscribed and signs up again starts over at pending.
   const row = await env.DB.prepare(
     `INSERT INTO subscribers (email, lang, timezone, status, source, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?, ?)
-     ON CONFLICT (email) DO UPDATE SET lang = excluded.lang, timezone = excluded.timezone, updated_at = excluded.updated_at,
+     ON CONFLICT (email) DO UPDATE SET
+       lang = CASE WHEN subscribers.status = 'confirmed' THEN subscribers.lang ELSE excluded.lang END,
+       timezone = CASE WHEN subscribers.status = 'confirmed' THEN subscribers.timezone ELSE excluded.timezone END,
+       updated_at = excluded.updated_at,
        status = CASE WHEN subscribers.status = 'unsubscribed' THEN 'pending' ELSE subscribers.status END
      RETURNING status`,
   )
     .bind(email, language, timezone, source, at, at)
     .first<{ status: string }>();
-  return row?.status === 'pending' ? { email, lang: language } : null;
+  // The email follows the page the reader is on; their stored language stays as it is.
+  if (row?.status === 'pending') return { email, lang: language, kind: 'confirm' };
+  if (row?.status === 'confirmed') return { email, lang: language, kind: 'signin' };
+  return null;
 }
 
 const token = (body: Body, query?: string | null): string => {
@@ -97,6 +109,16 @@ export async function confirmSubscription(env: Env, body: Body, client: string):
   if (!email) throw new HttpError(400, 'invalid_link', 'This confirmation link is invalid or has expired. Subscribe again to get a new one.');
   const row = await env.DB.prepare("UPDATE subscribers SET status = 'confirmed', updated_at = ? WHERE email = ? RETURNING lang").bind(now(), email).first<{ lang: Lang }>();
   if (!row) throw new HttpError(400, 'invalid_link', 'This address is not on the list any more. Subscribe again.');
+  return { lang: row.lang, askKey: await askToken(env, email) };
+}
+
+/** The link in the sign-in email. Hands this browser the ask key of a confirmed subscriber. */
+export async function signIn(env: Env, body: Body, client: string): Promise<{ lang: Lang; askKey: string }> {
+  await throttle(env, 'signin', client, 30);
+  const email = await verifyToken(env, token(body), 'signin');
+  if (!email) throw new HttpError(400, 'invalid_link', 'This sign-in link is invalid or has expired. Ask for a new one on any story.');
+  const row = await env.DB.prepare("SELECT lang FROM subscribers WHERE email = ? AND status = 'confirmed'").bind(email).first<{ lang: Lang }>();
+  if (!row) throw new HttpError(400, 'invalid_link', 'This address is not subscribed any more. Subscribe again.');
   return { lang: row.lang, askKey: await askToken(env, email) };
 }
 
