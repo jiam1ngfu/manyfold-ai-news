@@ -11,6 +11,10 @@ interface EmailStatus {
   provider: 'resend' | 'none';
   from: string | null;
   siteUrl: string | null;
+  postalAddress: string | null;
+  contactEmail: string | null;
+  webhook: boolean;
+  turnstile: boolean;
   subscribers: { status: string; lang: string; n: number }[];
   deliveries: { date: string; sent: number; failed: number; sending: number }[];
   lastError: string | null;
@@ -22,7 +26,7 @@ interface IssueRow {
   status: string;
 }
 
-const STATUSES = ['confirmed', 'pending', 'unsubscribed'] as const;
+const STATUSES = ['confirmed', 'pending', 'unsubscribed', 'bounced', 'complained'] as const;
 
 export default function EmailView() {
   const [status, setStatus] = useState<EmailStatus | null>(null);
@@ -103,6 +107,28 @@ export default function EmailView() {
           </div>
         ))}
       {status?.lastError && <p className="warn small">Last problem: {status.lastError}</p>}
+
+      <h3>Compliance and deliverability</h3>
+      {status && (
+        <ul className="small checklist">
+          <li>
+            {status.postalAddress ? '✓' : '✗'} Postal address in every footer (CAN-SPAM){status.postalAddress ? `: ${status.postalAddress}` : ': set EMAIL_POSTAL_ADDRESS in wrangler.jsonc'}
+          </li>
+          <li>
+            {status.contactEmail ? '✓' : '✗'} Replies go to a person{status.contactEmail ? `: ${status.contactEmail}` : ': set CONTACT_EMAIL, or replies to the sending domain bounce'}
+          </li>
+          <li>✓ One-click unsubscribe in every email, and “delete my data” on its page</li>
+          <li>
+            {status.webhook ? '✓' : '✗'} Bounces and spam complaints stop further email
+            {status.webhook
+              ? ''
+              : ': in Resend, add a webhook to <SITE_URL>/api/webhooks/resend for email.bounced and email.complained, then npx wrangler secret put RESEND_WEBHOOK_SECRET'}
+          </li>
+          <li>
+            {status.turnstile ? '✓' : '✗'} Bot check on the subscribe form{status.turnstile ? ' (Turnstile)' : ': set TURNSTILE_SITE_KEY and the TURNSTILE_SECRET_KEY secret'}
+          </li>
+        </ul>
+      )}
 
       <h3>Subscribers</h3>
       {status && (

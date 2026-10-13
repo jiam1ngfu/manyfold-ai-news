@@ -98,6 +98,24 @@ export interface Brief {
   text: L10n;
 }
 
+/**
+ * A change the owner made after publishing. A corrected story stays, marked, with its
+ * fixed text; a withdrawn story or brief is taken out and only this notice remains.
+ */
+export interface Correction {
+  /** ISO 8601, UTC. */
+  at: string;
+  kind: 'corrected' | 'withdrawn';
+  /** The story's id; absent for a withdrawn brief. */
+  story?: string;
+  /** A withdrawn story's 1-based position as published, so later stories keep theirs (storySlots). */
+  slot?: number;
+  /** The headline readers now see; for a withdrawn item, its last headline (or brief text), so it can still be named. */
+  title: L10n;
+  /** What was wrong and what changed. */
+  note: L10n;
+}
+
 export interface Issue {
   /** YYYY-MM-DD: the morning the issue is delivered. */
   date: string;
@@ -106,8 +124,18 @@ export interface Issue {
   today: { id: string; text: L10n }[];
   stories: Story[];
   briefs: Brief[];
+  /** Changes made after publishing, oldest first. */
+  corrections?: Correction[];
   /** True for the fictional sample used in local development. */
   sample?: boolean;
+}
+
+/** One entry in the public corrections log. */
+export interface CorrectionEntry extends Correction {
+  date: string;
+  number: number;
+  /** 1-based position of a corrected story in its issue, for the link; null when withdrawn. */
+  position: number | null;
 }
 
 export interface IssueResponse {
@@ -411,5 +439,92 @@ export function validateIssue(raw: unknown): Issue {
   });
   // A thin day may have no full story, only briefs; an issue with nothing in it is not one.
   if (stories.length + briefs.length === 0) fail('stories', 'an issue needs at least one story or brief');
-  return { date, number, today, stories, briefs, sample: raw.sample === true || undefined };
+  const corrections =
+    raw.corrections === undefined
+      ? undefined
+      : arr(raw.corrections, 'corrections', 30).map((c, i) => {
+          const p = `corrections[${i}]`;
+          if (!isObject(c)) fail(p, 'must be an object');
+          const at = str(c.at, `${p}.at`, 40);
+          if (Number.isNaN(Date.parse(at))) fail(`${p}.at`, 'must be an ISO date-time');
+          const kind = oneOf(c.kind, ['corrected', 'withdrawn'] as const, `${p}.kind`);
+          const storyId = c.story === undefined ? undefined : str(c.story, `${p}.story`, 60);
+          // A corrected story may have been withdrawn later, so only its id is required here.
+          if (kind === 'corrected' && !storyId) fail(`${p}.story`, 'a correction must name its story');
+          const slot = c.slot === undefined ? undefined : num(c.slot, `${p}.slot`);
+          if (slot !== undefined && (!Number.isInteger(slot) || slot < 1 || slot > 20)) fail(`${p}.slot`, 'must be a position from 1 to 20');
+          return { at, kind, story: storyId, slot, title: l10n(c.title, `${p}.title`, 400), note: l10n(c.note, `${p}.note`, 600) };
+        });
+  return { date, number, today, stories, briefs, corrections, sample: raw.sample === true || undefined };
+}
+
+/* ───────── corrections ───────── */
+
+/** One position in an issue as published: its story, or the notice of a story withdrawn from it. */
+export type Slot = { story: Story } | { withdrawn: Correction };
+
+/**
+ * The issue's stories in their published positions. Links to a story (/en/DATE/N in
+ * emails, share cards and the reader) use these positions, so withdrawing a story leaves
+ * a notice in its place instead of renumbering the stories after it.
+ */
+export function storySlots(issue: Issue): Slot[] {
+  const slots: Slot[] = issue.stories.map((story) => ({ story }));
+  const gone = (issue.corrections ?? []).filter((c) => c.kind === 'withdrawn' && c.slot !== undefined).sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0));
+  for (const c of gone) slots.splice(Math.min((c.slot ?? 1) - 1, slots.length), 0, { withdrawn: c });
+  return slots;
+}
+
+/** A story's 1-based published position, or 0 when it is not in the issue. */
+export const storyPosition = (issue: Issue, storyId: string): number => storySlots(issue).findIndex((s) => 'story' in s && s.story.id === storyId) + 1;
+
+/** What is at a published position: a story, a withdrawn story's notice, or nothing. */
+export const storyAt = (issue: Issue, position: number): Slot | null => (position >= 1 ? (storySlots(issue)[position - 1] ?? null) : null);
+
+export type StoryFix = Partial<Record<'title' | 'summary' | 'why' | 'next', L10n>>;
+
+export interface CorrectionRequest {
+  kind: 'corrected' | 'withdrawn';
+  /** A story id, or "brief-N" (0-based) for a brief. */
+  target: string;
+  note: L10n;
+  /** Only for kind "corrected": the story's fields as they should now read. */
+  fix?: StoryFix;
+}
+
+/**
+ * The owner's correction applied to a published issue: a corrected story keeps its place
+ * with the fixed text, a withdrawn story or brief is removed (and its "Today in 3" line
+ * with it). Returns a new issue, validated like any other.
+ */
+export function applyCorrection(issue: Issue, request: CorrectionRequest, at: string): Issue {
+  const next: Issue = structuredClone(issue);
+  const note = l10n(request.note, 'note', 600);
+  const brief = /^brief-(\d+)$/.exec(request.target);
+  if (brief) {
+    if (request.kind !== 'withdrawn') fail('kind', 'a brief can only be withdrawn');
+    const index = Number(brief[1]);
+    const removed = next.briefs[index];
+    if (!removed) fail('target', 'no such brief in this issue');
+    next.briefs.splice(index, 1);
+    next.corrections = [...(next.corrections ?? []), { at, kind: 'withdrawn', title: removed.text, note }];
+  } else {
+    const index = next.stories.findIndex((s) => s.id === request.target);
+    if (index < 0) fail('target', 'no such story in this issue');
+    const story = next.stories[index];
+    if (request.kind === 'withdrawn') {
+      const slot = storyPosition(issue, story.id);
+      next.stories.splice(index, 1);
+      next.today = next.today.filter((t) => t.id !== story.id);
+      next.corrections = [...(next.corrections ?? []), { at, kind: 'withdrawn', story: story.id, slot, title: story.title, note }];
+    } else {
+      const fix = request.fix ?? {};
+      for (const field of ['title', 'summary', 'why', 'next'] as const) {
+        if (fix[field] !== undefined) story[field] = l10n(fix[field], `fix.${field}`);
+      }
+      next.corrections = [...(next.corrections ?? []), { at, kind: 'corrected', story: story.id, title: story.title, note }];
+    }
+  }
+  if (next.stories.length + next.briefs.length === 0) fail('target', 'this is the last item: unpublish the issue instead');
+  return validateIssue(next);
 }

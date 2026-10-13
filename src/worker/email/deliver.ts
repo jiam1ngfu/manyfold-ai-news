@@ -8,13 +8,22 @@
  * the send, so a retried or overlapping tick can never send a second copy.
  */
 
-import type { Issue, Lang } from '../../shared/issue';
+import type { CorrectionEntry, Issue, Lang } from '../../shared/issue';
 import type { Env } from '../types';
 import { now } from '../db';
 import { safeErrorText } from '../a2a';
 import { ASK_KEY, renderConfirmEmail, renderIssueEmail, renderSignInEmail, UNSUBSCRIBE } from './render';
 import { BATCH_SIZE, provider, sendBatch, type Mail } from './send';
 import { askToken, confirmToken, signInToken, SIGNIN_MINUTES, unsubscribeToken } from './tokens';
+import { listCorrections } from '../quality';
+
+/** Fixes to earlier issues made since the one before `date` was published: they go in this email. */
+async function correctionsFor(env: Env, date: string): Promise<CorrectionEntry[]> {
+  const prev = await env.DB.prepare("SELECT published_at FROM issues WHERE status = 'published' AND date < ? ORDER BY date DESC LIMIT 1").bind(date).first<{ published_at: string | null }>();
+  if (!prev?.published_at) return [];
+  const since = prev.published_at;
+  return (await listCorrections(env)).filter((c) => c.date < date && c.at > since);
+}
 
 export const SEND_FROM_HOUR = 7;
 export const SEND_UNTIL_HOUR = 12;
@@ -145,10 +154,11 @@ export async function deliverDue(env: Env, at: Date): Promise<DeliveryTick> {
     budget -= claimed.size;
     tick.due += claimed.size;
     const issue = JSON.parse(row.data) as Issue;
+    const fixes = await correctionsFor(env, date);
     for (const lang of ['en', 'zh'] as const) {
       const recipients = group.filter((s) => s.lang === lang && claimed.has(s.email));
       if (recipients.length === 0) continue;
-      const rendered = renderIssueEmail(issue, lang, site, env.EMAIL_POSTAL_ADDRESS);
+      const rendered = renderIssueEmail(issue, lang, site, env.EMAIL_POSTAL_ADDRESS, fixes);
       for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
         const mails = await Promise.all(recipients.slice(i, i + BATCH_SIZE).map((s) => personalise(env, site, lang, s.email, rendered)));
         const sent = await sendBatch(env, mails, `aiin5-issue-${date}-${lang}-${await digest(mails.map((m) => m.to).join(','))}`);
@@ -197,7 +207,7 @@ export async function sendLinkEmail(env: Env, kind: LinkKind, email: string, lan
     await env.DB.prepare("INSERT OR IGNORE INTO email_log (email, kind, ref, status, created_at, updated_at) VALUES (?, ?, ?, 'sending', ?, ?)").bind(email, kind, ref, at, at).run();
     const token = kind === 'confirm' ? await confirmToken(env, email) : await signInToken(env, email);
     const url = `${site}/${lang}/${kind}?t=${encodeURIComponent(token)}`;
-    const rendered = kind === 'confirm' ? renderConfirmEmail(lang, url) : renderSignInEmail(lang, url, SIGNIN_MINUTES);
+    const rendered = kind === 'confirm' ? renderConfirmEmail(lang, url, `${site}/${lang}/privacy`) : renderSignInEmail(lang, url, SIGNIN_MINUTES);
     const [result] = await sendBatch(env, [{ to: email, ...rendered }]);
     await settle(env, kind, ref, [result]);
   } catch (error) {
@@ -212,7 +222,7 @@ export async function sendTest(env: Env, date: string, lang: Lang, to: string): 
   if (provider(env) === 'none') return { ok: false, error: 'No email provider is configured.' };
   const row = await env.DB.prepare('SELECT data FROM issues WHERE date = ?').bind(date).first<{ data: string }>();
   if (!row) return { ok: false, error: 'No issue for that date.' };
-  const mail = await personalise(env, site, lang, to, renderIssueEmail(JSON.parse(row.data) as Issue, lang, site, env.EMAIL_POSTAL_ADDRESS));
+  const mail = await personalise(env, site, lang, to, renderIssueEmail(JSON.parse(row.data) as Issue, lang, site, env.EMAIL_POSTAL_ADDRESS, await correctionsFor(env, date)));
   const at = now();
   await env.DB.prepare("INSERT OR IGNORE INTO email_log (email, kind, ref, status, created_at, updated_at) VALUES (?, 'test', ?, 'sending', ?, ?)").bind(to, at, at, at).run();
   const [result] = await sendBatch(env, [{ ...mail, subject: `[Test] ${mail.subject}` }]);
@@ -250,7 +260,7 @@ export async function previewIssueEmail(env: Env, date: string, lang: Lang, requ
   const row = await env.DB.prepare('SELECT data FROM issues WHERE date = ?').bind(date).first<{ data: string }>();
   if (!row) return null;
   const site = siteUrl(env, requestOrigin) ?? requestOrigin;
-  const rendered = renderIssueEmail(JSON.parse(row.data) as Issue, lang, site, env.EMAIL_POSTAL_ADDRESS);
+  const rendered = renderIssueEmail(JSON.parse(row.data) as Issue, lang, site, env.EMAIL_POSTAL_ADDRESS, await correctionsFor(env, date));
   // The preview is nobody's copy: no unsubscribe token and no ask key.
   const html = rendered.html.split(UNSUBSCRIBE).join(`${site}/${lang}/unsubscribe`).split(`?k=${ASK_KEY}`).join('');
   return { subject: rendered.subject, html, bytes: new TextEncoder().encode(html).length };

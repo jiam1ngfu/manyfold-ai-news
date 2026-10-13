@@ -6,7 +6,7 @@
 export interface Env {
   /** Static build output in dist/client. Non-/api/ requests are served from here. */
   ASSETS: Fetcher;
-  /** D1 database. The starter uses five tables; the rest is yours. */
+  /** D1 database: issues, subscribers, runs, questions and the rest (src/worker/db.ts). */
   DB: D1Database;
 
   /** Manyfold API base, e.g. https://api.manyfold.ai */
@@ -18,14 +18,25 @@ export interface Env {
   /** Optional: when set, all routes except /api/health and /api/state require x-admin-password. */
   ADMIN_PASSWORD?: string;
 
-  /** The site's public origin, e.g. https://aiin5.co. Links in emails point here. */
+  /** The public site, base path included, e.g. https://app.manyfold.ai/ai-news. Links in emails, share cards and the sitemap point here. */
   SITE_URL?: string;
   /** Sender, e.g. "AI in 5 <hello@aiin5.co>". Its domain must be verified with the provider. */
   EMAIL_FROM?: string;
   /** Secret. Resend API key; without it (or EMAIL_FROM) emails are logged, not sent. */
   RESEND_API_KEY?: string;
-  /** Optional postal address for the email footer (CAN-SPAM). */
+  /** The publisher's postal address, in every email footer (CAN-SPAM) and on the privacy page. */
   EMAIL_POSTAL_ADDRESS?: string;
+  /** A mailbox a person reads: the Reply-To of every email and the privacy contact. */
+  CONTACT_EMAIL?: string;
+  /** Secret. Signs the bounce and complaint webhooks from Resend (whsec_…). Without it the webhook route is off. */
+  RESEND_WEBHOOK_SECRET?: string;
+  /** Where owner alerts go when none is set in /admin. */
+  ALERT_EMAIL?: string;
+
+  /** Cloudflare Turnstile on the subscribe form. Both or neither: without them the form has no challenge. */
+  TURNSTILE_SITE_KEY?: string;
+  /** Secret. */
+  TURNSTILE_SECRET_KEY?: string;
 
   /** Readers' questions wait here for the answer agent (wrangler.jsonc queues). */
   ASK_QUEUE?: Queue<{ id: string; turn?: number }>;

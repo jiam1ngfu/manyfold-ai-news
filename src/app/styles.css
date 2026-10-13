@@ -524,3 +524,69 @@ code {
 .check-list li {
   padding: 6px 0;
 }
+
+/* Quality: the launch gate and the correction desk. */
+.notice.warn-notice {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.desk {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.desk h4 {
+  margin: 0;
+}
+
+.desk label.small {
+  display: grid;
+  gap: 4px;
+}
+
+.desk-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.desk-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.desk-pair > span {
+  grid-column: 1 / -1;
+}
+
+.desk-pair textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+input.narrow {
+  width: 5rem;
+}
+
+.counts.wide {
+  width: 100%;
+}
+
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 640px) {
+  .desk-pair {
+    grid-template-columns: 1fr;
+  }
+}

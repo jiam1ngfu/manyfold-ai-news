@@ -23,6 +23,24 @@
 # RESEND_API_KEY=
 # EMAIL_FROM=
 # EMAIL_POSTAL_ADDRESS=
+# CONTACT_EMAIL=
+
+# Bounce and complaint webhook from Resend (Webhooks → add endpoint
+# <SITE_URL>/api/webhooks/resend, events email.bounced and email.complained). Paste its
+# signing secret here for local tests; in production:
+#   npx wrangler secret put RESEND_WEBHOOK_SECRET
+# RESEND_WEBHOOK_SECRET=
+
+# Owner alerts (failed runs, published issues, reader reports). Usually set in /admin;
+# this is the fallback.
+# ALERT_EMAIL=
+
+# Turnstile on the subscribe form. wrangler.jsonc sets the production site key; locally
+# leave both unset (no check), or use Cloudflare's always-pass test pair:
+# TURNSTILE_SITE_KEY=1x00000000000000000000AA
+# TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+# In production the secret is a secret:
+#   npx wrangler secret put TURNSTILE_SECRET_KEY
 
 # Encrypts the Manyfold device code and agent tokens stored in D1.
 # If unset, a random key is generated on first use and stored in the same database.

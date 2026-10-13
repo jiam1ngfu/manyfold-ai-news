@@ -37,6 +37,8 @@ export async function sendBatch(env: Env, mails: Mail[], idempotencyKey?: string
   if (mails.length > BATCH_SIZE) throw new Error(`At most ${BATCH_SIZE} emails per batch.`);
   if (provider(env) === 'none') return mails.map((m) => ({ to: m.to, ok: false, error: 'No email provider is configured.' }));
   const from = (env.EMAIL_FROM ?? '').trim();
+  // The sending domain takes no mail, so replies go to a mailbox a person reads.
+  const replyTo = (env.CONTACT_EMAIL ?? '').trim();
   try {
     const response = await fetchTimeout(
       RESEND_BATCH,
@@ -47,7 +49,9 @@ export async function sendBatch(env: Env, mails: Mail[], idempotencyKey?: string
           'content-type': 'application/json',
           ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
         },
-        body: JSON.stringify(mails.map((m) => ({ from, to: [m.to], subject: m.subject, html: m.html, text: m.text, ...(m.headers ? { headers: m.headers } : {}) }))),
+        body: JSON.stringify(
+          mails.map((m) => ({ from, to: [m.to], subject: m.subject, html: m.html, text: m.text, ...(replyTo ? { reply_to: [replyTo] } : {}), ...(m.headers ? { headers: m.headers } : {}) })),
+        ),
       },
       TIMEOUT_MS,
     );

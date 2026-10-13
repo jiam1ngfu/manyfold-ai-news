@@ -1,6 +1,7 @@
 /**
  * The admin console at /admin: loads /api/state once, routes between the tabs by
- * location.hash (/admin#issues, #email, #questions, #chat, #settings — no router dependency), and raises the
+ * location.hash (/admin#issues, #quality, #stats, #email, #questions, #chat, #settings — no
+ * router dependency), and raises the
  * password gate whenever the deployment requires one and the stored password is
  * missing or wrong. Nothing in the reader links here.
  */
@@ -15,11 +16,14 @@ import Logo from './components/Logo';
 import IssuesView from './components/IssuesView';
 import EmailView from './components/EmailView';
 import QuestionsView from './components/QuestionsView';
+import QualityView from './components/QualityView';
+import StatsView from './components/StatsView';
 import './styles.css';
 
-type Tab = 'issues' | 'email' | 'questions' | 'chat' | 'settings';
+type Tab = 'issues' | 'quality' | 'stats' | 'email' | 'questions' | 'chat' | 'settings';
 
-const TABS: Tab[] = ['issues', 'email', 'questions', 'chat', 'settings'];
+const TABS: Tab[] = ['issues', 'quality', 'stats', 'email', 'questions', 'chat', 'settings'];
+const LABELS: Record<Tab, string> = { issues: 'Issues', quality: 'Quality', stats: 'Stats', email: 'Email', questions: 'Questions', chat: 'Chat', settings: 'Settings' };
 const tabFromHash = (): Tab => TABS.find((t) => location.hash === `#${t}`) ?? 'issues';
 
 export default function App() {
@@ -78,28 +82,20 @@ export default function App() {
           <h1>
             <Logo />
           </h1>
-          <p className="muted">Admin: issues, email, readers’ questions, connected agents, chat and settings.</p>
+          <p className="muted">Admin: issues and automation, quality and corrections, stats, email, readers’ questions, agents.</p>
         </div>
         <nav className="tabs" aria-label="Pages">
-          <a className={tab === 'issues' ? 'tab active' : 'tab'} href="#issues">
-            Issues
-          </a>
-          <a className={tab === 'email' ? 'tab active' : 'tab'} href="#email">
-            Email
-          </a>
-          <a className={tab === 'questions' ? 'tab active' : 'tab'} href="#questions">
-            Questions
-          </a>
-          <a className={tab === 'chat' ? 'tab active' : 'tab'} href="#chat">
-            Chat
-          </a>
-          <a className={tab === 'settings' ? 'tab active' : 'tab'} href="#settings">
-            Settings
-          </a>
+          {TABS.map((t) => (
+            <a key={t} className={tab === t ? 'tab active' : 'tab'} href={`#${t}`}>
+              {LABELS[t]}
+            </a>
+          ))}
         </nav>
       </header>
 
       {tab === 'issues' && <IssuesView agents={state.agents} />}
+      {tab === 'quality' && <QualityView />}
+      {tab === 'stats' && <StatsView />}
       {tab === 'email' && <EmailView />}
       {tab === 'questions' && <QuestionsView />}
       {tab === 'chat' && <ChatView agents={state.agents} initialSession={state.connect.session} refreshState={refreshState} />}

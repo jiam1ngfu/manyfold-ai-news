@@ -1,8 +1,9 @@
 /**
  * The reader's write routes: subscribe (with its confirm and unsubscribe links), "was
- * this useful", and "report a problem". They are open to the public (no admin
- * password), so each one validates strictly and is throttled per client. A client is a
- * salted SHA-256 of the connecting IP; the IP itself is never stored.
+ * this useful", "report a problem", the reading counters and the one-question survey.
+ * They are open to the public (no admin password), so each one validates strictly and is
+ * throttled per client. A client is a salted SHA-256 of the connecting IP; the IP itself
+ * is never stored.
  *
  * Subscribing never reveals whether an address was already on the list: the answer is
  * the same either way. A pending address gets a (rate-limited) confirmation, and a
@@ -13,6 +14,9 @@ import { LANGS, type Lang } from '../shared/issue';
 import { HttpError, type Env } from './types';
 import { getSetting, now, setSettingIfAbsent } from './db';
 import { askToken, verifyToken } from './email/tokens';
+import { assertHuman } from './turnstile';
+import { eraseSubscriber } from './retention';
+import { adminUrl, sendAlert } from './alerts';
 
 type Body = Record<string, unknown> | null;
 
@@ -70,22 +74,24 @@ export const isEmail = (value: string): boolean => value.length <= 254 && EMAIL.
  * confirmed subscriber's address, so that must not change where or when their issue
  * arrives.
  */
-export async function subscribe(env: Env, body: Body, client: string): Promise<{ email: string; lang: Lang; kind: 'confirm' | 'signin' } | null> {
+export async function subscribe(env: Env, body: Body, client: string, ip?: string): Promise<{ email: string; lang: Lang; kind: 'confirm' | 'signin' } | null> {
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!isEmail(email)) throw new HttpError(400, 'invalid_email', 'Enter a valid email address.');
   const timezone = typeof body?.timezone === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(body.timezone) ? body.timezone : 'UTC';
   const source = body?.source === 'gate' ? 'gate' : 'done';
   const language = lang(body?.lang);
   await throttle(env, 'subscribe', client, 5);
+  await assertHuman(env, body?.turnstile, ip);
   const at = now();
-  // Someone who unsubscribed and signs up again starts over at pending.
+  // Someone who unsubscribed, bounced or complained and signs up again starts over at
+  // pending: the confirmation link proves the mailbox works and wants us.
   const row = await env.DB.prepare(
     `INSERT INTO subscribers (email, lang, timezone, status, source, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?, ?)
      ON CONFLICT (email) DO UPDATE SET
        lang = CASE WHEN subscribers.status = 'confirmed' THEN subscribers.lang ELSE excluded.lang END,
        timezone = CASE WHEN subscribers.status = 'confirmed' THEN subscribers.timezone ELSE excluded.timezone END,
        updated_at = excluded.updated_at,
-       status = CASE WHEN subscribers.status = 'unsubscribed' THEN 'pending' ELSE subscribers.status END
+       status = CASE WHEN subscribers.status IN ('unsubscribed', 'bounced', 'complained') THEN 'pending' ELSE subscribers.status END
      RETURNING status`,
   )
     .bind(email, language, timezone, source, at, at)
@@ -122,11 +128,16 @@ export async function signIn(env: Env, body: Body, client: string): Promise<{ la
   return { lang: row.lang, askKey: await askToken(env, email) };
 }
 
-/** The unsubscribe link and the one-click List-Unsubscribe header. Always succeeds for a valid link. */
+/**
+ * The unsubscribe link and the one-click List-Unsubscribe header. Always succeeds for a
+ * valid link. With erase, everything held about the address goes too, at once; without
+ * it the row is kept as unsubscribed and deleted after 30 days (retention.ts).
+ */
 export async function unsubscribe(env: Env, body: Body, query: string | null, client: string): Promise<void> {
   await throttle(env, 'unsubscribe', client, 30);
   const email = await verifyToken(env, token(body, query), 'unsubscribe');
   if (!email) throw new HttpError(400, 'invalid_link', 'This unsubscribe link is invalid. Reply to any issue and we will remove you by hand.');
+  if (body?.erase === true) return eraseSubscriber(env, email);
   await env.DB.prepare("UPDATE subscribers SET status = 'unsubscribed', updated_at = ? WHERE email = ?").bind(now(), email).run();
 }
 
@@ -139,14 +150,89 @@ export async function recordFeedback(env: Env, body: Body, client: string): Prom
   await env.DB.prepare('INSERT INTO feedback (issue_date, value, created_at) VALUES (?, ?, ?)').bind(date, value, now()).run();
 }
 
-export async function recordReport(env: Env, body: Body, client: string): Promise<void> {
+export const MAX_REPORT_NOTE = 500;
+
+/**
+ * "Report a problem", with what the reader typed, if anything. The owner hears at once;
+ * `defer` sends that alert after the response, so the reader never waits on the mail provider.
+ */
+export async function recordReport(env: Env, body: Body, client: string, defer: (work: Promise<unknown>) => void = () => undefined): Promise<void> {
   const date = issueDate(body?.date);
   const storyId = typeof body?.storyId === 'string' && /^[a-z0-9-]{1,60}$/.test(body.storyId) ? body.storyId : null;
   const target = typeof body?.target === 'string' && /^((story|answer|proof)(:\d{1,2})?|own:[0-9a-f]{32})$/.test(body.target) ? body.target : null;
   if (!storyId || !target) throw new HttpError(400, 'bad_request', 'storyId and target are required.');
+  // A reader who types an address into the note would put it in the owner's alert and the
+  // admin API, which never carry addresses: take it out before storing.
+  const note = typeof body?.note === 'string' ? body.note.replace(/\s+/g, ' ').trim().slice(0, MAX_REPORT_NOTE).replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[address removed]') : '';
+  const language = lang(body?.lang);
   await assertPublished(env, date);
   await throttle(env, 'report', client, 20);
-  await env.DB.prepare('INSERT INTO reports (issue_date, story_id, target, lang, created_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(date, storyId, target, lang(body?.lang), now())
+  const row = await env.DB.prepare('INSERT INTO reports (issue_date, story_id, target, lang, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id')
+    .bind(date, storyId, target, language, now())
+    .first<{ id: number }>();
+  if (row && note) await env.DB.prepare('INSERT OR REPLACE INTO report_notes (report_id, note) VALUES (?, ?)').bind(row.id, note).run();
+  if (row) {
+    defer(sendAlert(env, {
+      key: `report:${row.id}`,
+      subject: `${date}: a reader reported a problem`,
+      lines: [`Story ${storyId} (${target}, read in ${language === 'zh' ? 'Chinese' : 'English'}).`, note ? `They wrote: “${note}”` : 'They left no note.', 'Check it against the sources, then correct or withdraw the story, or mark the report as no error.'],
+      link: { label: 'Open reports', url: adminUrl(env, 'quality') },
+    }));
+  }
+}
+
+/* ───────── reading counters and the survey ───────── */
+
+export const EVENTS = ['view', 'finish', 'share'] as const;
+export type ReaderEvent = (typeof EVENTS)[number];
+
+/**
+ * Counts a view, a finish (the reader reached the end) or a share, per day and issue,
+ * never per person. A confirmed subscriber's ask key on a view also records that this
+ * subscriber opened this issue (salted hash only), for the launch gate's measure.
+ */
+export async function recordEvent(env: Env, body: Body, client: string): Promise<void> {
+  const date = issueDate(body?.date);
+  const event = EVENTS.find((e) => e === body?.event);
+  if (!event) throw new HttpError(400, 'bad_request', 'event must be view, finish or share.');
+  const language = lang(body?.lang);
+  const source = body?.source === 'email' ? 'email' : 'web';
+  await assertPublished(env, date);
+  await throttle(env, 'event', client, 120);
+  const at = now();
+  await env.DB.prepare(
+    `INSERT INTO daily_events (day, issue_date, event, lang, source, n) VALUES (?, ?, ?, ?, ?, 1)
+     ON CONFLICT (day, issue_date, event, lang, source) DO UPDATE SET n = n + 1`,
+  )
+    .bind(at.slice(0, 10), date, event, language, source)
     .run();
+  if (event !== 'view' || typeof body?.key !== 'string') return;
+  const asker = await confirmedAsker(env, body.key);
+  if (asker) await env.DB.prepare('INSERT OR IGNORE INTO reads (asker, issue_date, first_at) VALUES (?, ?, ?)').bind(asker, date, at).run();
+}
+
+export const SURVEY_ANSWERS = ['very', 'somewhat', 'not'] as const;
+
+/** "How would you feel if AI in 5 stopped?": one answer per confirmed subscriber, the latest wins. */
+export async function recordSurvey(env: Env, body: Body, client: string): Promise<void> {
+  const answer = SURVEY_ANSWERS.find((a) => a === body?.answer);
+  if (!answer) throw new HttpError(400, 'bad_request', 'answer must be very, somewhat or not.');
+  await throttle(env, 'survey', client, 10);
+  const asker = typeof body?.key === 'string' ? await confirmedAsker(env, body.key) : null;
+  if (!asker) throw new HttpError(403, 'not_subscribed', 'Only subscribers are asked this.');
+  const at = now();
+  await env.DB.prepare(
+    `INSERT INTO survey (asker, answer, created_at, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (asker) DO UPDATE SET answer = excluded.answer, updated_at = excluded.updated_at`,
+  )
+    .bind(asker, answer, at, at)
+    .run();
+}
+
+/** The salted hash of the subscriber behind an ask key, if they are still confirmed. */
+async function confirmedAsker(env: Env, key: string): Promise<string | null> {
+  const email = await verifyToken(env, key, 'ask');
+  if (!email) return null;
+  const row = await env.DB.prepare("SELECT 1 AS ok FROM subscribers WHERE email = ? AND status = 'confirmed'").bind(email).first();
+  return row ? clientKey(env, `ask:${email}`) : null;
 }

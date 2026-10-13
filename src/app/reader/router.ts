@@ -5,12 +5,15 @@
  *   /en/2026-10-12        one issue
  *   /en/2026-10-12/3      one issue, opened at its third story (share links)
  *   /en/archive           past issues
- *   /en/about             how it's made, corrections
+ *   /en/about             how it's made
+ *   /en/corrections       every correction and withdrawn story
+ *   /en/privacy           what we keep about subscribers, and for how long
  *   /en/confirm?t=…       the link in the confirmation email
  *   /en/signin?t=…        the link in the sign-in email (ask from another device)
  *   /en/unsubscribe?t=…   the unsubscribe link in every email
  * No router dependency: history.pushState plus a popstate listener. These paths are
  * written without the site's base path: navigate and Link add it, useRoute strips it.
+ * src/worker/pages.ts classifies the same paths to send each page's tags and status.
  */
 
 import { useEffect, useState } from 'react';
@@ -23,6 +26,8 @@ export type Route =
   | { name: 'issue'; lang: Lang; date: string; story: number | null }
   | { name: 'archive'; lang: Lang }
   | { name: 'about'; lang: Lang }
+  | { name: 'corrections'; lang: Lang }
+  | { name: 'privacy'; lang: Lang }
   | { name: 'confirm'; lang: Lang }
   | { name: 'signin'; lang: Lang }
   | { name: 'unsubscribe'; lang: Lang }
@@ -38,7 +43,7 @@ export function parseRoute(pathname: string): Route {
   const lang: Lang = first;
   if (!second) return { name: 'today', lang };
   if (second === 'archive' && !third) return { name: 'archive', lang };
-  if (second === 'about' && !third) return { name: 'about', lang };
+  if ((second === 'about' || second === 'corrections' || second === 'privacy') && !third) return { name: second, lang };
   if ((second === 'confirm' || second === 'signin' || second === 'unsubscribe') && !third) return { name: second, lang };
   if (/^\d{4}-\d{2}-\d{2}$/.test(second) && parts.length <= 3) {
     const story = third && /^\d{1,2}$/.test(third) ? Number(third) : null;
@@ -59,7 +64,9 @@ export function pathFor(route: Route): string {
     case 'archive':
       return `/${route.lang}/archive`;
     case 'about':
-      return `/${route.lang}/about`;
+    case 'corrections':
+    case 'privacy':
+      return `/${route.lang}/${route.name}`;
     case 'confirm':
     case 'signin':
     case 'unsubscribe':

@@ -80,7 +80,7 @@ export default function Masthead({ lang, route, issue }: { lang: Lang; route: Ro
         <Link to={`/${lang}/`} className="wordmark">
           <Logo height={27} />
         </Link>
-        <nav className="langs" aria-label="Language">
+        <nav className="langs" aria-label={T.languageLabel}>
           {(['en', 'zh'] as const).map((l) => (
             <Link key={l} to={withLang(route, l)} aria-current={l === lang} onNavigate={() => rememberLang(l)}>
               {l === 'en' ? 'EN' : '中文'}

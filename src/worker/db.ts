@@ -22,8 +22,8 @@ export const now = (): string => new Date().toISOString();
  * as a statement boundary.
  */
 const SCHEMA = `
--- Generic key/value store. The starter keeps its generated encryption key here;
--- the rest of the namespace is yours.
+-- Generic key/value store: the generated encryption and link-signing keys, and the
+-- owner's settings (agents, automation, alerts).
 CREATE TABLE IF NOT EXISTS settings (
   key        TEXT PRIMARY KEY,
   value      TEXT NOT NULL,
@@ -96,7 +96,9 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE INDEX IF NOT EXISTS idx_issues_status_date ON issues (status, date);
 
 -- Email subscribers. Personal data: never logged, never returned by the API.
--- status: pending (until the confirmation link is clicked), confirmed or unsubscribed.
+-- status: pending (until the confirmation link is clicked), confirmed, unsubscribed,
+-- bounced or complained (both reported by the mail provider; neither gets email again).
+-- Rows that are not confirmed are deleted 30 days after their last change (retention.ts).
 CREATE TABLE IF NOT EXISTS subscribers (
   email      TEXT PRIMARY KEY,
   lang       TEXT NOT NULL,
@@ -203,6 +205,52 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE INDEX IF NOT EXISTS idx_questions_cache ON questions (issue_date, story_id, lang, norm);
 CREATE INDEX IF NOT EXISTS idx_questions_asker ON questions (asker, created_at);
 CREATE INDEX IF NOT EXISTS idx_questions_created ON questions (created_at);
+
+-- What the reader typed with "Report a problem", if anything. Untrusted text, shown in
+-- /admin only. A side table because reports predates it and tables are never altered.
+CREATE TABLE IF NOT EXISTS report_notes (
+  report_id  INTEGER PRIMARY KEY,
+  note       TEXT NOT NULL
+);
+
+-- The owner's check of a published issue during the trial and the weekly spot checks:
+-- verdict clean (no factual errors found) or errors. Drives the launch gate in /admin.
+CREATE TABLE IF NOT EXISTS issue_checks (
+  issue_date TEXT PRIMARY KEY,
+  verdict    TEXT NOT NULL,
+  note       TEXT,
+  checked_at TEXT NOT NULL
+);
+
+-- Reader events, counted per day and never per person: event is view, finish (reached
+-- the end of the issue) or share. source is web or email (opened from an issue email).
+CREATE TABLE IF NOT EXISTS daily_events (
+  day        TEXT NOT NULL,
+  issue_date TEXT NOT NULL,
+  event      TEXT NOT NULL,
+  lang       TEXT NOT NULL,
+  source     TEXT NOT NULL,
+  n          INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, issue_date, event, lang, source)
+);
+
+-- Which issues a confirmed subscriber opened, for the launch gate's "opened 3 of the
+-- last 5" measure. asker is the same salted hash as in questions, never the address.
+CREATE TABLE IF NOT EXISTS reads (
+  asker      TEXT NOT NULL,
+  issue_date TEXT NOT NULL,
+  first_at   TEXT NOT NULL,
+  PRIMARY KEY (asker, issue_date)
+);
+
+-- "How would you feel if AI in 5 stopped?", one answer per subscriber (salted hash):
+-- very, somewhat or not (disappointed).
+CREATE TABLE IF NOT EXISTS survey (
+  asker      TEXT PRIMARY KEY,
+  answer     TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 /**

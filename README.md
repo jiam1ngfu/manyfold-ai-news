@@ -1,165 +1,132 @@
-# Cloudflare Worker Starter for Manyfold Agents
+# AI in 5
 
 English · [中文](README_CN.md)
 
-A Cloudflare Workers app template pre-wired with [Manyfold](https://manyfold.ai) AI-agent
-connectivity. Deploy it in one click, connect your Manyfold agents from the page, verify the
-wiring with a streaming chat — then build whatever you actually wanted to build on top of a
-stack that already works.
+**Every morning at 7, the AI news that matters, from the US, China and beyond, in about five minutes.**
+Written by AI agents, with every number and quote checked against its source. In English and Chinese, on the web and by email.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/manyfold-open/cloudflare-worker-starter)
+**Read it:** [app.manyfold.ai/ai-news](https://app.manyfold.ai/ai-news)
+
+[![AI in 5: the AI news that matters, in 5 minutes](public/ai-news/og/card-en.png)](https://app.manyfold.ai/ai-news)
+
+## What readers get
+
+- **One issue a day, with an end.** "Today in 3" up top, a handful of stories, a few briefs. At most ten items and about a thousand words; on a thin day, fewer.
+- **East and West.** Stories from US, Chinese and European labs, companies and regulators, read in their original language.
+- **Checkable.** Every story links its sources and says whether each is official, reported or a rumor. A highlighted number is one that was matched against the source by code: tap it to see the original wording.
+- **Two languages.** English is the master copy; the Chinese edition is translated and checked so that numbers, names and links match. Each language has its own URLs.
+- **Email at 7:00 local time.** Double opt-in, the whole issue in the email, one-click unsubscribe, no tracking pixels.
+- **Ask about a story.** Subscribers can ask their own questions; answers come only from that story's sources, every sentence cited, or say plainly that the sources don't cover it.
+- **Corrections in the open.** A corrected story is marked with what changed; a withdrawn one leaves a notice. All of them are on the [corrections page](https://app.manyfold.ai/ai-news/en/corrections) and in the next email.
+
+## How an issue is made
+
+Nobody writes or reviews an issue by hand. A pipeline does it every evening, and code, not AI, has the last word on facts.
 
 ```
-┌──────────────┐    ┌───────────────┐    ┌────────────────────┐    ┌──────────────────┐
-│ 1. Deploy    │ →  │ 2. Open your  │ →  │ 3. Connect an      │ →  │ 4. Chat to       │
-│  (button or  │    │    Worker URL │    │    agent (approve  │    │    verify, then  │
-│  fork+Builds)│    │               │    │    on Manyfold)    │    │    build your app│
-└──────────────┘    └───────────────┘    └────────────────────┘    └──────────────────┘
+19:30 UTC  collect   official newsrooms, labs and leading outlets (RSS and newsroom pages)
+           pick      writer agent chooses the stories                         ← billed turn 1
+           fetch     the original pages, kept as snapshots for checking
+           write     writer agent drafts the English master                    ← billed turn 2
+           check 1   code: every quote must be in its source, every number too
+           check 2   a different agent, on a different model family, reviews   ← billed turn 3
+                     each claim against the sources; its fixes go through check 1 again
+           translate writer agent writes the Chinese edition                   ← billed turn 4
+           check 3   code: numbers, names and links match across languages
+           publish   only what passed all three checks; anything that failed is cut
+20:30 UTC  retry     once, only if the 19:30 run failed
+07:00 local          email to each subscriber in their own time zone
 ```
 
-## What you get
+Three agents run on [Manyfold](https://manyfold.ai), each in its own sandbox: the **writer** (picks, writes, translates), the **reviewer** (check 2; no web access, judges only the sources it is given) and the **answerer** (readers' questions; every tool denied, never sees a reader's address). The owner gets an email when a run fails, when an issue is published (with a warning on a thin day) and when a reader reports a problem, and spot-checks issues from `/admin`.
 
-- **Connect an agent** — a device-code handshake against Manyfold: a popup opens Manyfold's
-  consent page, you compare the confirmation code, pick which agents to share, done. Bearer
-  tokens land AES-GCM-encrypted in your D1 database and never reach the browser.
-- **Chat** — a streaming chat (A2A `message/stream` over SSE) with each connected agent.
-  Conversations persist in D1 and keep the agent-side `contextId`, so multi-turn context works
-  across reloads.
-- **Settings** — see every connected agent, re-run the (free, non-billing) connectivity probe,
-  disconnect, or connect more. Re-approving an agent rotates its token in place.
-- **A clean base to iterate on** — Vite + React 19 + Hono on one Worker, D1 with a
-  zero-migration schema, ~no magic. Add a route, a table, a component, ship.
+The product plan, in Chinese, is in [docs/product-plan.md](docs/product-plan.md); the design system and prototypes are in [docs/design/](docs/design/).
 
-## Deploying
+## Privacy
 
-### Path A — Deploy to Cloudflare button (recommended)
+No cookies, no ads, no third-party tracking. Subscribers' addresses are never logged and never returned by any API; reading counts are daily totals. Unconfirmed, unsubscribed and bounced addresses are deleted after 30 days, and "Unsubscribe and delete my data" deletes everything at once. The full policy: [app.manyfold.ai/ai-news/en/privacy](https://app.manyfold.ai/ai-news/en/privacy).
 
-> [!IMPORTANT]
-> **Before clicking "Deploy" in the Cloudflare form, expand the "Advanced settings" section once.**
-> As of August 2026 a Cloudflare dashboard bug leaves hidden form fields (build API token,
-> non-production deploy command) uninitialized while that section is collapsed — the flow then
-> stalls silently after creating the repository, with no error shown. Expanding the section
-> auto-fills them and the deploy completes normally. This is a dashboard-side issue, not
-> specific to this template.
+## How it is built
 
-Click the button above. Cloudflare will:
+One Cloudflare Worker serves everything below `app.manyfold.ai/ai-news`:
 
-1. create a copy of this repository in your GitHub/GitLab account,
-2. provision the D1 database declared in `wrangler.jsonc` and write the real `database_id`
-   into your copy,
-3. wire the repo to **Workers Builds** — every push to `main` builds (`npm run build`) and
-   deploys (`npx wrangler deploy`) automatically.
-
-No secrets are required. Open the Worker URL and you are at step 2 of the diagram.
-
-### Path B — fork / use as template, connect Workers Builds yourself
-
-1. Fork this repo (or "Use this template") on GitHub.
-2. Create the database: `npx wrangler d1 create manyfold-app-db`, then paste the returned
-   `database_id` into `wrangler.jsonc`.
-3. In the Cloudflare dashboard: **Workers & Pages → Create → Connect to Git**, pick your fork,
-   set build command `npm run build` and deploy command `npx wrangler deploy`.
-4. Push to `main` — Workers Builds deploys it.
-
-### After deploying (both paths)
-
-Recommended once your URL is public — without a password anyone who finds the URL can chat
-with (and bill) your agents:
-
-```bash
-npx wrangler secret put ADMIN_PASSWORD
+```
+Browser ── pages ──► Worker: index.html with each page's title, share card and status (pages.ts)
+        ── /api ───► Hono app (src/worker/index.ts)
+                       reader routes   published issues, subscribe, ask, report, counters
+                       admin routes    behind ADMIN_PASSWORD: issues, quality, stats, email, agents
+Cron 19:30 / 20:30 ─► pipeline (src/worker/pipeline/), then data retention (retention.ts)
+Cron every 15 min ──► email delivery at 07:00 local (src/worker/email/)
+Queue aiin5-ask ────► readers' questions to the answerer (src/worker/ask/)
+                     D1 (src/worker/db.ts) · Resend · Turnstile · Manyfold A2A
 ```
 
-Optional, keeps the credential-encryption key out of the database (see
-[Security notes](#security-notes)):
+| Path | What it is |
+| --- | --- |
+| `src/app/reader/` | The reader: issue, archive, about, corrections, privacy, ask sheet |
+| `src/app/` (rest) | The owner's console at `/admin` (reached by URL only) |
+| `src/shared/issue.ts` | The issue format, its validator, and corrections |
+| `src/worker/pipeline/` | Collect, pick, write, three checks, translate, publish |
+| `src/worker/ask/` | Readers' questions and the check every answer must pass |
+| `src/worker/email/` | Rendering, sending, signed links, bounce webhook |
+| `src/worker/quality.ts` | Corrections, reports, the owner's checks, the launch gate |
+| `src/worker/pages.ts` | Server-side tags for every page, the sitemap |
+| `AGENTS.md` | The rules any change must keep: read it before changing anything |
 
-```bash
-npx wrangler secret put CONFIG_ENCRYPTION_KEY
-```
+Vite, React 19, Hono, D1, no ORM, no migrations: the schema in `src/worker/db.ts` is applied on the first request.
 
-## Local development
+## Running it locally
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars   # then uncomment MANYFOLD_API_BASE_URL / ENVIRONMENT
+cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-One command runs everything: Vite serves the React app with HMR while the Worker runs in
-workerd with a **local D1 database emulated automatically** — the schema is applied on the
-first request, so there is no migration step, ever.
+The dev server runs the React app and the Worker together, with a local D1 database and a fictional sample issue. Open http://localhost:5173/ai-news/ for the reader and http://localhost:5173/ai-news/admin for the console. Emails are logged, not sent, until `RESEND_API_KEY` and `EMAIL_FROM` are set.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Dev server (app + worker + local D1) |
-| `npm run check` | Typecheck, build, `wrangler deploy --dry-run` |
+| `npm run dev` | App, Worker and local D1 |
 | `npm test` | Unit tests (vitest) |
-| `npm run deploy` | Manual deploy (Workers Builds normally does this) |
+| `npm run check` | Typecheck, build, `wrangler deploy --dry-run` |
 | `npm run smoke -- <url>` | Smoke-test a deployment |
+| `node scripts/og-cards.mjs` | Re-render the share cards (needs Chrome) |
 
-## How it is put together
+## Configuration
 
+Variables live in `wrangler.jsonc`; secrets are set with `npx wrangler secret put NAME` and never committed (`.dev.vars` is git-ignored).
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `SITE_URL` | var | The public site, base path included |
+| `EMAIL_POSTAL_ADDRESS`, `CONTACT_EMAIL` | var | Publisher's address in every email; Reply-To and privacy contact |
+| `TURNSTILE_SITE_KEY` | var | Bot check on the subscribe form |
+| `ADMIN_PASSWORD` | secret | Locks `/admin` and the admin API |
+| `RESEND_API_KEY`, `EMAIL_FROM` | secret | Sending email |
+| `RESEND_WEBHOOK_SECRET` | secret | Verifies bounce and complaint webhooks |
+| `TURNSTILE_SECRET_KEY` | secret | Verifies the bot check |
+| `CONFIG_ENCRYPTION_KEY` | secret | Optional key for the agent tokens sealed in D1 |
+
+## Deploying
+
+Production is the `manyfold-ai-news` Worker on the NetMind.AI Cloudflare account, routed at `app.manyfold.ai/ai-news`. Pushing to GitHub does **not** deploy. From a clean checkout of `main`:
+
+```bash
+npm ci
+npm run check
+npm test
+npm run build
+npx wrangler deploy
+npm run smoke -- https://app.manyfold.ai/ai-news
 ```
-Browser (React SPA, dist/client)
-   │  /api/* (run_worker_first)             everything else → static assets
-   ▼
-Hono app (src/worker/index.ts)
-   │ ensureSchema → origin check → admin gate
-   ├─ /api/connect*   src/worker/connect.ts   Manyfold device-code handshake
-   ├─ /api/agents*    src/worker/connect.ts   list / verify / disconnect
-   ├─ /api/agents/:id/chat  src/worker/chat.ts  SSE passthrough + persistence
-   ▼
-D1 (settings, connect_sessions, agents, conversations, messages)
-Manyfold A2A (message/stream, tasks/get)   ← per-agent bearer token, decrypted per call
-```
 
-| File | Purpose |
-| --- | --- |
-| `src/worker/index.ts` | Routes, middleware, error mapping |
-| `src/worker/connect.ts` | The Manyfold handshake and connected-agent store |
-| `src/worker/a2a.ts` | A2A JSON-RPC + SSE stream consumer, SSRF guard, secret redaction |
-| `src/worker/chat.ts` | One chat turn: agent SSE in, app SSE out, D1 persistence |
-| `src/worker/crypto.ts` | AES-GCM seal/unseal, constant-time compare |
-| `src/worker/db.ts` | Schema (runtime-applied) and settings store |
-| `src/shared/types.ts` | API types shared by worker and browser |
-| `src/app/` | React app: chat + settings tabs, connect panel, password gate |
+The first request after a deploy can return 530 while the route propagates; the smoke test waits for it.
 
-## Extending it
+## Security
 
-This template is a starting point, not a framework. The intended loop:
-
-- **New API route** — add it in `src/worker/index.ts`; anything except `/api/health` and
-  `/api/state` is automatically behind the admin password when one is set.
-- **New table** — append a `CREATE TABLE IF NOT EXISTS …` to `SCHEMA` in `src/worker/db.ts`;
-  it is created on the next request, locally and in production.
-- **New page** — add a component and a tab in `src/app/App.tsx`.
-- **Call your agent from server code** — `credentialFor(env, agentId)` in
-  `src/worker/connect.ts` gives you `{ rpcUrl, token }` for any connected agent; see
-  `src/worker/chat.ts` for a full streaming turn, or use non-streaming `message/send` +
-  `tasks/get` for background work.
-
-`AGENTS.md` lists the invariants to preserve while iterating — useful for both humans and
-AI agents working on this codebase.
-
-## Security notes
-
-- **The device-code handshake is designed so credentials never touch the browser.** The
-  browser sees an opaque `connectId`; the device code (the only thing that can redeem agent
-  tokens) is encrypted in D1 and redeemed exactly once. The confirmation code shown in the
-  page is the flow's anti-phishing check — the Manyfold consent page must show the same code.
-- **Agent tokens are AES-GCM encrypted at rest** with a key derived from
-  `CONFIG_ENCRYPTION_KEY`, or — so that one-click deploys work with zero setup — from a
-  random key generated on first use and stored in the same database. The trade-off is
-  honest: a generated key protects against partial exposure (logs, a table-scoped query) but
-  not against a full database dump. Set the secret to remove that caveat.
-- **The app is open by default.** Anyone with the URL can connect agents and chat until you
-  set `ADMIN_PASSWORD`. All routes except `/api/health` and `/api/state` then require the
-  password (compared in constant time; sent as a header, kept in sessionStorage).
-- Agent RPC URLs are validated (https-only, private/loopback addresses rejected in
-  production), verification uses a non-billing `tasks/get` probe rather than a real turn, and
-  every error string is stripped of anything token-shaped before it can reach a log or the
-  browser.
+Agent tokens and the Manyfold device code are AES-GCM sealed in D1 and never reach the browser; agent URLs pass an SSRF guard; connectivity checks never bill; every billed turn's message id is derived from a stored row, so a retry cannot bill twice. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Built on the [Manyfold Cloudflare Worker starter](https://github.com/manyfold-open/cloudflare-worker-starter).

@@ -4,11 +4,12 @@
  * preset questions with their cited answers.
  */
 
-import { useState } from 'react';
-import type { AskPreset, ChartRow, Issue, Lang, Org, Quote, Story } from '../../shared/issue';
-import { COPY, KIND_NAMES, REGION_NAMES, languageName, sep, sourceTime } from './i18n';
+import { useId, useState, type FormEvent } from 'react';
+import { storyPosition, type AskPreset, type ChartRow, type Issue, type Lang, type Org, type Quote, type Story } from '../../shared/issue';
+import { COPY, KIND_NAMES, REGION_NAMES, dateParts, languageName, sep, sourceTime } from './i18n';
 import RichText, { MarkButton, type MarkControls } from './RichText';
-import { sendReport } from './data';
+import { sendReport, sharePage } from './data';
+import { Link } from './Masthead';
 
 export function Logo({ org }: { org?: Org }) {
   if (!org) return null;
@@ -138,21 +139,40 @@ function Visual({ story, lang, marks, eager }: { story: Story; lang: Lang; marks
   );
 }
 
+/** "Report a problem": one tap opens a short optional note, so the owner knows what to check. */
 function ReportButton({ issue, story, target, lang }: { issue: Issue; story: Story; target: string; lang: Lang }) {
   const T = COPY[lang];
-  const [sent, setSent] = useState(false);
-  if (sent) return <span>{T.reported}</span>;
+  const id = useId();
+  const [state, setState] = useState<'closed' | 'open' | 'sent'>('closed');
+  const [note, setNote] = useState('');
+  if (state === 'sent') return <span>{T.reported}</span>;
+  if (state === 'closed') {
+    return (
+      <button type="button" className="text-btn" onClick={() => setState('open')}>
+        {T.report}
+      </button>
+    );
+  }
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setState('sent');
+    sendReport(issue.date, story.id, target, lang, note).catch(() => setState('open'));
+  };
   return (
-    <button
-      type="button"
-      className="text-btn"
-      onClick={() => {
-        setSent(true);
-        sendReport(issue.date, story.id, target, lang).catch(() => setSent(false));
-      }}
-    >
-      {T.report}
-    </button>
+    <form className="report-form" onSubmit={onSubmit}>
+      <label className="visually-hidden" htmlFor={id}>
+        {T.reportPlaceholder}
+      </label>
+      <textarea id={id} rows={2} maxLength={500} placeholder={T.reportPlaceholder} value={note} onChange={(e) => setNote(e.target.value)} />
+      <span className="report-actions">
+        <button type="submit" className="text-btn strong">
+          {T.reportSend}
+        </button>
+        <button type="button" className="text-btn" onClick={() => setState('closed')}>
+          {T.cancel}
+        </button>
+      </span>
+    </form>
   );
 }
 
@@ -258,11 +278,29 @@ export default function StoryCard({
   const T = COPY[lang];
   const [openMark, setOpenMark] = useState<number | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const marks: MarkControls = { storyId: story.id, open: openMark, toggle: (i) => setOpenMark((m) => (m === i ? null : i)) };
+  const fixes = (issue.corrections ?? []).filter((c) => c.kind === 'corrected' && c.story === story.id);
+  const position = storyPosition(issue, story.id);
+
+  const onShare = async () => {
+    const outcome = await sharePage(`/${lang}/${issue.date}/${position}`, story.title[lang], issue.date, lang);
+    if (outcome === 'copied') setCopied(true);
+  };
 
   return (
     <article className={story.top ? 'story is-top' : 'story'} id={`s-${story.id}`}>
       <div className="story-main">
+        {fixes.length > 0 && (
+          <div className="correction" role="note">
+            {fixes.map((c, i) => (
+              <p key={i}>
+                <strong>{T.correctedNote(dateParts(c.at.slice(0, 10), lang).label)}</strong> {c.note[lang]}{' '}
+                <Link to={`/${lang}/corrections`}>{T.corrections}</Link>
+              </p>
+            ))}
+          </div>
+        )}
         <p className="meta">
           <Logo org={story.org} />
           <span className="region">{REGION_NAMES[story.region][lang]}</span>
@@ -287,9 +325,16 @@ export default function StoryCard({
         <div className="sources">
           <div className="sources-row">
             <span>{story.sourceLine[lang]}</span>
-            <button type="button" className="text-btn" aria-expanded={sourcesOpen} aria-controls={`src-${story.id}`} onClick={() => setSourcesOpen((o) => !o)}>
-              {sourcesOpen ? T.hideSources : T.seeSources}
-            </button>
+            <span className="story-actions">
+              <button type="button" className="text-btn" aria-expanded={sourcesOpen} aria-controls={`src-${story.id}`} onClick={() => setSourcesOpen((o) => !o)}>
+                {sourcesOpen ? T.hideSources : T.seeSources}
+              </button>
+              {position > 0 && (
+                <button type="button" className="text-btn" onClick={() => void onShare()}>
+                  {copied ? T.shared : T.shareStory}
+                </button>
+              )}
+            </span>
           </div>
           <ul className="source-list" id={`src-${story.id}`} hidden={!sourcesOpen}>
             {story.sources.map((src, i) => {

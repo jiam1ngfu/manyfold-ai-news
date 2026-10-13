@@ -53,6 +53,31 @@ const checks = [
       if (body?.error?.code !== code) throw new Error(`unexpected body: ${JSON.stringify(body)}`);
     },
   },
+  {
+    name: 'GET /en/ serves the reader with its share card',
+    run: async () => {
+      const response = await fetch(`${base}/en/`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      if (!html.includes('<meta property="og:image"')) throw new Error('no og:image tag');
+    },
+  },
+  {
+    name: 'an unknown page answers 404 with the app shell',
+    run: async () => {
+      const response = await fetch(`${base}/en/definitely-not-a-page`);
+      if (response.status !== 404) throw new Error(`HTTP ${response.status}, expected 404`);
+      if (!(await response.text()).includes('<div id="root">')) throw new Error('no #root element in HTML');
+    },
+  },
+  {
+    name: 'GET /sitemap.xml is a sitemap',
+    run: async () => {
+      const response = await fetch(`${base}/sitemap.xml`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!(await response.text()).includes('<urlset')) throw new Error('no <urlset>');
+    },
+  },
 ];
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

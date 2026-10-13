@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import type { Issue, IssueResponse, Lang } from '../../shared/issue';
 import { COPY, localDate } from './i18n';
 import Masthead from './Masthead';
-import { AboutPage, ArchivePage, EmailLinkPage, EmptyState, IssuePage, Message } from './pages';
+import { AboutPage, ArchivePage, CorrectionsPage, EmailLinkPage, EmptyState, IssuePage, Message, PrivacyPage } from './pages';
 import { ReaderError, captureAskKey, fetchDraft, fetchIssue, fetchLatest } from './data';
 import { navigate, pathFor, preferredLang, useRoute } from './router';
 import './reader.css';
@@ -83,12 +83,14 @@ export default function ReaderApp() {
   const T = COPY[lang];
   if (route.name === 'root') return null;
 
-  if (route.name === 'archive' || route.name === 'about' || route.name === 'confirm' || route.name === 'signin' || route.name === 'unsubscribe' || route.name === 'notFound') {
+  if (route.name !== 'today' && route.name !== 'issue') {
     return (
       <>
         <Masthead lang={lang} route={route} />
         {route.name === 'archive' && <ArchivePage lang={lang} />}
         {route.name === 'about' && <AboutPage lang={lang} />}
+        {route.name === 'corrections' && <CorrectionsPage lang={lang} />}
+        {route.name === 'privacy' && <PrivacyPage lang={lang} />}
         {(route.name === 'confirm' || route.name === 'signin' || route.name === 'unsubscribe') && <EmailLinkPage lang={lang} kind={route.name} />}
         {route.name === 'notFound' && <Message lang={lang} title={T.notFoundTitle} text={T.notFoundText} />}
       </>
@@ -100,11 +102,11 @@ export default function ReaderApp() {
     <>
       {load.state === 'ready' && load.draft && (
         <p className="preview-banner" role="status">
-          Draft preview. Readers can’t see this issue until it is published in /admin.
+          {T.draftBanner}
         </p>
       )}
       <Masthead lang={lang} route={route} issue={issue} />
-      {load.state === 'ready' && <IssuePage data={load.data} lang={lang} story={route.name === 'issue' ? route.story : null} />}
+      {load.state === 'ready' && <IssuePage data={load.data} lang={lang} story={route.name === 'issue' ? route.story : null} live={!preview && !load.draft} />}
       {load.state === 'empty' && <EmptyState lang={lang} />}
       {load.state === 'missing' && <Message lang={lang} title={T.notFoundTitle} text={T.notFoundText} />}
       {load.state === 'failed' && (

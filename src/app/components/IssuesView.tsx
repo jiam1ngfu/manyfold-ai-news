@@ -1,8 +1,8 @@
 /**
- * The owner's issue desk at /admin#issues: choose the writer and review agents, run the
- * pipeline, read each run report (what passed check 1, what the reviewer passed, fixed
- * or cut, and why), preview drafts in the real reader, and publish. During the trial
- * period nothing is published without a click here.
+ * The owner's issue desk at /admin#issues: choose the agents, set the automation
+ * (auto-publish, where alerts go, how many runs a day), run the pipeline, read each run
+ * report (what passed check 1, what the reviewer passed, fixed or cut, and why), preview
+ * issues in the real reader, and publish or unpublish. Corrections live under Quality.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -20,6 +20,17 @@ interface RunSummary {
   finishedAt: string | null;
   stories: number;
   briefs: number;
+  repairs: number;
+}
+
+interface PipelineState {
+  writerAgentId: string | null;
+  reviewerAgentId: string | null;
+  answererAgentId: string | null;
+  autoPublish: boolean;
+  alertEmail: string | null;
+  budget: { used: number; limit: number };
+  runs: RunSummary[];
 }
 
 interface ItemCheck {
@@ -53,6 +64,7 @@ interface RunReport {
   /** Older runs stored a sentence here, before check 2 existed. */
   review: { agent: string; items: ReviewItem[]; top?: { from: string; to: string } } | string | null;
   translationWarnings: string[];
+  repairs?: string[];
   durationMs: number;
 }
 
@@ -135,6 +147,7 @@ function RunDetails({ id }: { id: string }) {
             </ul>
           )}
           <Review review={r.review} />
+          {r.repairs && r.repairs.length > 0 && <p className="warn small">The agent’s JSON needed a repair turn at: {r.repairs.join(', ')} (one extra billed turn each).</p>}
           {r.translationWarnings.length > 0 && (
             <details>
               <summary className="small">{r.translationWarnings.length} translation notes</summary>
@@ -164,10 +177,90 @@ function RunDetails({ id }: { id: string }) {
   );
 }
 
+const runBadge = (status: string) => (status === 'published' || status === 'drafted' ? 'badge ok' : status === 'failed' ? 'badge warn' : 'badge');
+
+/** Auto-publish, the owner's alert address, and the daily run limit. */
+function Automation({ state, onSaved }: { state: PipelineState; onSaved: (next: Partial<PipelineState>) => void }) {
+  const [email, setEmail] = useState(state.alertEmail ?? '');
+  const [limit, setLimit] = useState(String(state.budget.limit));
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+
+  const save = async (body: Record<string, unknown>, done?: string) => {
+    setError('');
+    setNote('');
+    try {
+      const next = await api<{ autoPublish: boolean; alertEmail: string | null; budget: PipelineState['budget'] }>('/api/admin/pipeline/settings', { method: 'PUT', body: JSON.stringify(body) });
+      onSaved(next);
+      if (done) setNote(done);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const testAlert = async () => {
+    setError('');
+    setNote('Sending…');
+    try {
+      const r = await api<{ ok: boolean; error?: string }>('/api/admin/alerts/test', { method: 'POST', body: '{}' });
+      setNote(r.ok ? `Sent to ${state.alertEmail}.` : '');
+      if (!r.ok) setError(r.error ?? 'The alert did not go out.');
+    } catch (cause) {
+      setNote('');
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  return (
+    <>
+      <h3>Automation</h3>
+      <div className="row">
+        <span className={state.autoPublish ? 'badge ok' : 'badge warn'}>{state.autoPublish ? 'auto-publish on' : 'auto-publish off'}</span>
+        <button className="button subtle" onClick={() => void save({ autoPublish: !state.autoPublish })}>
+          {state.autoPublish ? 'Turn off: hold issues as drafts' : 'Turn on: publish what passes the checks'}
+        </button>
+      </div>
+      <p className="muted small">
+        {state.autoPublish
+          ? 'An issue that passes all three checks goes live at once and is emailed at 7:00 local time. You are told by email and can correct, withdraw a story or unpublish afterwards.'
+          : 'Each run saves a draft. Publish it here before 23:00 UTC, or readers in Asia get no issue that morning.'}
+      </p>
+      <div className="row">
+        <input type="email" placeholder="owner@example.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Alert address" />
+        <button className="button" onClick={() => void save({ alertEmail: email }, email ? 'Saved.' : 'Alerts are off.')}>
+          Save alert address
+        </button>
+        <button className="button subtle" disabled={!state.alertEmail} onClick={() => void testAlert()}>
+          Send a test
+        </button>
+      </div>
+      <p className="muted small">
+        {state.alertEmail ? `Alerts go to ${state.alertEmail} about ` : 'No alert address, so nobody hears about '}
+        failed scheduled runs, each automatic publish (with a warning on a thin day), readers’ problem reports, bounces and failed sends. At most 30 a day.
+      </p>
+      <div className="row">
+        <label className="small">
+          Runs allowed per 24 hours{' '}
+          <input className="narrow" type="number" min={1} max={20} value={limit} onChange={(e) => setLimit(e.target.value)} />
+        </label>
+        <button className="button subtle" onClick={() => void save({ runLimit: Number(limit) }, 'Saved.')}>
+          Save limit
+        </button>
+        <span className="muted small">
+          {state.budget.used} of {state.budget.limit} used. Each run bills four agent turns; the scheduled runs count too but are never blocked.
+        </span>
+      </div>
+      {note && <p className="muted small">{note}</p>}
+      {error && <div className="notice error">{error}</div>}
+    </>
+  );
+}
+
 export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
   const [writer, setWriter] = useState<string | null>(null);
   const [reviewer, setReviewer] = useState<string | null>(null);
   const [answerer, setAnswerer] = useState<string | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineState | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [issues, setIssues] = useState<IssueRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -178,14 +271,12 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [pipeline, list] = await Promise.all([
-        api<{ writerAgentId: string | null; reviewerAgentId: string | null; answererAgentId: string | null; runs: RunSummary[] }>('/api/admin/pipeline'),
-        api<{ issues: IssueRow[] }>('/api/admin/issues'),
-      ]);
-      setWriter(pipeline.writerAgentId);
-      setReviewer(pipeline.reviewerAgentId);
-      setAnswerer(pipeline.answererAgentId);
-      setRuns(pipeline.runs);
+      const [state, list] = await Promise.all([api<PipelineState>('/api/admin/pipeline'), api<{ issues: IssueRow[] }>('/api/admin/issues')]);
+      setPipeline(state);
+      setWriter(state.writerAgentId);
+      setReviewer(state.reviewerAgentId);
+      setAnswerer(state.answererAgentId);
+      setRuns(state.runs);
       setIssues(list.issues);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -250,8 +341,14 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
     <section className="panel">
       <h2>Issues</h2>
       <p className="muted">
-        The pipeline runs every day at 19:30 UTC (and retries once at 20:30 if that fails) and saves a <strong>draft</strong>. Read the draft, check the run report, then publish it. Nothing reaches readers until you do.
+        The pipeline runs every day at 19:30 UTC and retries once at 20:30 if that fails. With auto-publish on, an issue that passes the checks goes live at once; with it off, it waits here as a draft. Correct or withdraw a published story under{' '}
+        <a className="link" href="#quality">
+          Quality
+        </a>
+        .
       </p>
+
+      {pipeline && <Automation state={pipeline} onSaved={(next) => setPipeline((p) => (p ? { ...p, ...next } : p))} />}
 
       <h3>Agents</h3>
       {agents.length < 3 ? (
@@ -304,7 +401,10 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
       <h3>Run now</h3>
       {confirming ? (
         <div className="row">
-          <span className="warn small">A run makes four billed agent calls (three to the writer, one to the reviewer) and takes a few minutes.</span>
+          <span className="warn small">
+            A run makes four billed agent calls (three to the writer, one to the reviewer) and takes a few minutes.
+            {pipeline?.autoPublish ? ' What passes the checks is published at once.' : ''}
+          </span>
           <button className="button" onClick={() => void runNow()}>
             Run it
           </button>
@@ -334,9 +434,9 @@ export default function IssuesView({ agents }: { agents: ConnectedAgent[] }) {
             <button className="link" onClick={() => setOpen(open === run.id ? null : run.id)}>
               {run.issueDate} · run {run.id.split('-').pop()} · {run.trigger}
             </button>{' '}
-            <span className={run.status === 'drafted' ? 'badge ok' : run.status === 'failed' ? 'badge warn' : 'badge'}>{run.status}</span>{' '}
+            <span className={runBadge(run.status)}>{run.status}</span>{' '}
             <span className="muted small">
-              {run.status === 'drafted' ? `${run.stories} stories, ${run.briefs} briefs` : run.error ?? ''}
+              {run.status === 'drafted' || run.status === 'published' ? `${run.stories} stories, ${run.briefs} briefs${run.repairs ? `, ${run.repairs} JSON repair` : ''}` : (run.error ?? '')}
             </span>
             {open === run.id && <RunDetails id={run.id} />}
           </li>
