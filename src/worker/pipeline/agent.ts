@@ -9,6 +9,13 @@ import type { AgentCredential } from '../types';
 
 const TURN_TIMEOUT_MS = 8 * 60 * 1000;
 
+// How Manyfold reports a sandbox whose runner never came up (a slow wake, or a CLI update):
+// "Chat runner unavailable (runner_unavailable). …". No turn ran and nothing was billed,
+// but the task stays failed under its messageId, so only a new messageId can try again.
+const RUNNER_DOWN = /\(runner_(?:unavailable|updating)\)/;
+
+export class RunnerUnavailable extends A2AError {}
+
 export async function agentTurn(cred: AgentCredential, messageId: string, text: string, timeoutMs = TURN_TIMEOUT_MS): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -22,7 +29,9 @@ export async function agentTurn(cred: AgentCredential, messageId: string, text: 
       },
     });
     if (snapshot.state && snapshot.state !== 'completed') {
-      throw new A2AError(`${cred.label} stopped at "${snapshot.state}"${snapshot.text ? `: ${snapshot.text.slice(0, 200)}` : ''}.`, false);
+      const message = `${cred.label} stopped at "${snapshot.state}"${snapshot.text ? `: ${snapshot.text.slice(0, 200).replace(/\.$/, '')}` : ''}.`;
+      if (snapshot.state === 'failed' && RUNNER_DOWN.test(snapshot.text)) throw new RunnerUnavailable(message, true);
+      throw new A2AError(message, false);
     }
     if (!snapshot.text.trim()) throw new A2AError(`${cred.label} finished without any text.`, true);
     return snapshot.text;

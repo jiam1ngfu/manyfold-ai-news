@@ -122,10 +122,15 @@ export interface AskState {
 export const askQuestion = (date: string, storyId: string, lang: Lang, question: string) =>
   request<AskState>('/api/ask', { method: 'POST', body: JSON.stringify({ key: askKey(), date, storyId, lang, question }) });
 
-/** Polls until the answer is ready: answers usually take 10 to 30 seconds. */
+/**
+ * Polls until the answer is ready. Answers usually take 10 to 30 seconds, but a sleeping
+ * answer agent can take minutes to wake, and the worker retries it twice, so keep going.
+ */
 export async function waitForAnswer(id: string, signal: AbortSignal): Promise<AskState> {
-  for (let i = 0; i < 90; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, i < 5 ? 2000 : 3000));
+  const start = Date.now();
+  while (Date.now() - start < 12 * 60_000) {
+    const waited = Date.now() - start;
+    await new Promise((resolve) => setTimeout(resolve, waited < 10_000 ? 2000 : waited < 60_000 ? 3000 : 5000));
     if (signal.aborted) throw new ReaderError(0, 'aborted');
     const state = await request<AskState>(`/api/ask/${encodeURIComponent(id)}`);
     if (state.status !== 'queued' && state.status !== 'answering') return state;

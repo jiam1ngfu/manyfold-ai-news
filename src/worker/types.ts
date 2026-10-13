@@ -28,7 +28,7 @@ export interface Env {
   EMAIL_POSTAL_ADDRESS?: string;
 
   /** Readers' questions wait here for the answer agent (wrangler.jsonc queues). */
-  ASK_QUEUE?: Queue<{ id: string }>;
+  ASK_QUEUE?: Queue<{ id: string; turn?: number }>;
 }
 
 /** Everything needed to talk to one agent over A2A. */
