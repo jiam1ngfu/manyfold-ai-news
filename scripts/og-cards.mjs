@@ -2,9 +2,10 @@
 /**
  * Renders the share cards (public/ai-news/og/card-en.png and card-zh.png, 1200×630) that
  * every page names as its og:image (src/worker/pages.ts), in the layout of the share
- * cards in docs/design/index.html, and the repository's social preview for GitHub
- * (docs/design/brand/github-social-preview.png, 1280×640, uploaded by hand under the
- * repository's Settings). Needs Google Chrome and a network connection for the fonts:
+ * cards in docs/design/index.html, and the repository's social preview for GitHub from
+ * docs/design/brand/github-social-preview.html (1280×640 at 2x, uploaded by hand under the
+ * repository's Settings → Social preview). Needs Google Chrome and a network connection
+ * for the fonts:
  *   node scripts/og-cards.mjs
  */
 
@@ -32,12 +33,12 @@ const CARDS = {
   },
 };
 
-const page = (lang, card, width = 1200, height = 630) => `<!doctype html><html lang="${lang === 'zh' ? 'zh-Hans' : 'en'}"><head><meta charset="utf-8">
+const page = (lang, card) => `<!doctype html><html lang="${lang === 'zh' ? 'zh-Hans' : 'en'}"><head><meta charset="utf-8">
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..700&family=Schibsted+Grotesk:wght@400..700&family=Noto+Serif+SC:wght@400;600&display=block" rel="stylesheet">
 <style>
   html, body { margin: 0; }
-  body { width: ${width}px; height: ${height}px; background: #fff; color: #000; }
-  .og { box-sizing: border-box; width: ${width}px; height: ${height}px; padding: 64px ${72 + (width - 1200) / 2}px; display: flex; flex-direction: column; font-family: "Newsreader", "Noto Serif SC", Georgia, serif; }
+  body { width: 1200px; height: 630px; background: #fff; color: #000; }
+  .og { box-sizing: border-box; width: 1200px; height: 630px; padding: 64px 72px; display: flex; flex-direction: column; font-family: "Newsreader", "Noto Serif SC", Georgia, serif; }
   .lockup { height: 52px; width: auto; display: block; align-self: flex-start; }
   h1 { font-size: ${lang === 'zh' ? '76px' : '72px'}; line-height: 1.1; font-weight: ${lang === 'zh' ? 600 : 500}; letter-spacing: ${lang === 'zh' ? '0' : '-0.015em'}; margin: 64px 0 0; max-width: 1000px; }
   .m { white-space: nowrap; padding: 0 .1em; background: linear-gradient(to bottom, transparent .2em, #FFE45C .2em, #FFE45C calc(100% - .06em), transparent calc(100% - .06em)); }
@@ -61,8 +62,8 @@ for (const [lang, card] of Object.entries(CARDS)) {
   console.log(`wrote ${png}`);
 }
 
-const social = join(dir, 'github.html');
-writeFileSync(social, page('en', CARDS.en, 1280, 640));
+// The GitHub preview is its own design, aimed at people looking at the code.
+const social = join(root, 'docs/design/brand/github-social-preview.html');
 const preview = join(root, 'docs/design/brand/github-social-preview.png');
-execFileSync(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1', '--window-size=1280,640', '--virtual-time-budget=8000', `--screenshot=${preview}`, `file://${social}`], { stdio: 'ignore' });
+execFileSync(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', '--window-size=1280,640', '--virtual-time-budget=8000', `--screenshot=${preview}`, `file://${social}`], { stdio: 'ignore' });
 console.log(`wrote ${preview}`);
