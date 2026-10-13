@@ -36,7 +36,7 @@ export const sep = (lang: Lang): string => (lang === 'zh' ? '：' : ': ');
 
 type Copy = {
   coverageLabel: string;
-  todayIn3: string;
+  todayIn: (n: number) => string;
   why: string;
   next: string;
   seeSources: string;
@@ -118,7 +118,7 @@ type Copy = {
 export const COPY: Record<Lang, Copy> = {
   en: {
     coverageLabel: 'Where today’s stories come from',
-    todayIn3: 'Today in 3',
+    todayIn: (n) => `Today in ${n}`,
     why: 'Why it matters',
     next: 'What to watch',
     seeSources: 'See sources',
@@ -184,7 +184,7 @@ export const COPY: Record<Lang, Copy> = {
     askLimit: 'You’ve asked your 10 questions for today. More tomorrow.',
     askPaused: 'Asking is paused right now. Try again later.',
     askFailed: 'Something went wrong. Try again.',
-    dek: (weekday, stories, minutes) => `${weekday}’s issue: ${stories} stories, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
+    dek: (weekday, stories, minutes) => `${weekday}’s issue: ${stories} ${stories === 1 ? 'story' : 'stories'}, about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
     emptyTitle: 'The first issue is on its way.',
     emptyText: 'Every morning at 7, the AI news that matters, from the US, China and beyond, in about five minutes.',
     notFoundTitle: 'There’s no issue here.',
@@ -230,7 +230,7 @@ export const COPY: Record<Lang, Copy> = {
   },
   zh: {
     coverageLabel: '今天的新闻来自哪里',
-    todayIn3: '今日三件事',
+    todayIn: (n) => `今日${['一', '两', '三'][n - 1] ?? n}件事`,
     why: '为什么重要',
     next: '接下来关注',
     seeSources: '查看来源',

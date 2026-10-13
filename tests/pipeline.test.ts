@@ -324,6 +324,12 @@ describe('agent output', () => {
     expect(draft.stories[0].summary).toBe('Costs <m0>$5</m0> a month.');
   });
 
+  it('accepts a draft of briefs only, and refuses an empty one', () => {
+    const brief = { region: 'us', kind: 'reported', text: 'Lab ships Q3.', sourceName: 'X', url: 'https://x.example/a' };
+    expect(readDraft({ stories: [], briefs: [brief], today: [] }).briefs).toHaveLength(1);
+    expect(() => readDraft({ stories: [], briefs: [], today: [] })).toThrow('no stories or briefs');
+  });
+
   it('coerces a loose draft and gives every story a unique id', () => {
     const draft = readDraft({ stories: [{ title: 'Same title' }, { title: 'Same title' }], briefs: [], today: [] });
     expect(new Set(draft.stories.map((s) => s.id)).size).toBe(2);
@@ -438,6 +444,17 @@ describe('picking', () => {
     const prompt = selectPrompt('2026-10-11', [], ['OpenAI releases nearly 400 AI-generated math results']);
     expect(prompt).toContain('Covered in the last 7 days');
     expect(prompt).toContain('OpenAI releases nearly 400 AI-generated math results');
+  });
+
+  it('gives the picker each report\'s link, and never lets a missing primary source demote a story', () => {
+    const c: Candidate = {
+      id: 'c1', feed: 'x', title: 't', link: 'https://techcrunch.com/2026/10/12/x', published: '2026-10-12T00:00:00Z', summary: '', sourceName: { en: 'TechCrunch', zh: 'TechCrunch' }, kind: 'reported', lang: 'en', region: 'us',
+    };
+    const prompt = selectPrompt('2026-10-13', [c]);
+    expect(prompt).toContain('"url":"https://techcrunch.com/2026/10/12/x"');
+    expect(prompt).toContain('Do not use search engines');
+    expect(prompt).toContain('Never make a story a brief for that reason');
+    expect(prompt).toContain('There is no minimum');
   });
 
   const candidate = (link: string, kind: SourceKind): Candidate => ({
