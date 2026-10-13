@@ -8,7 +8,7 @@ import StoryCard, { Logo } from './Story';
 import AskSheet from './AskSheet';
 import SubscribeForm from './Subscribe';
 import { Link } from './Masthead';
-import { confirmSubscription, fetchArchive, sendFeedback, unsubscribe } from './data';
+import { confirmSubscription, fetchArchive, sendFeedback, signIn, unsubscribe } from './data';
 
 export function Footer({ lang, sample }: { lang: Lang; sample?: boolean }) {
   const T = COPY[lang];
@@ -217,19 +217,19 @@ export function Message({ lang, title, text, action }: { lang: Lang; title: stri
 }
 
 /**
- * The pages the email links open. Confirming happens on load. Unsubscribing waits for a
- * click, so a mail scanner that opens every link cannot unsubscribe anyone.
+ * The pages the email links open. Confirming and signing in happen on load. Unsubscribing
+ * waits for a click, so a mail scanner that opens every link cannot unsubscribe anyone.
  */
-export function EmailLinkPage({ lang, kind }: { lang: Lang; kind: 'confirm' | 'unsubscribe' }) {
+export function EmailLinkPage({ lang, kind }: { lang: Lang; kind: 'confirm' | 'signin' | 'unsubscribe' }) {
   const T = COPY[lang];
   const token = new URLSearchParams(location.search).get('t') ?? '';
-  const [state, setState] = useState<'ask' | 'working' | 'done' | 'failed'>(kind === 'confirm' ? 'working' : 'ask');
+  const [state, setState] = useState<'ask' | 'working' | 'done' | 'failed'>(kind === 'unsubscribe' ? 'ask' : 'working');
 
   useEffect(() => {
-    document.title = `AI in 5 · ${kind === 'confirm' ? T.confirmedTitle : T.unsubTitle}`;
-    if (kind !== 'confirm') return;
+    document.title = `AI in 5 · ${kind === 'confirm' ? T.confirmedTitle : kind === 'signin' ? T.signedInTitle : T.unsubTitle}`;
+    if (kind === 'unsubscribe') return;
     if (!token) return setState('failed');
-    confirmSubscription(token).then(
+    (kind === 'confirm' ? confirmSubscription(token) : signIn(token)).then(
       () => setState('done'),
       () => setState('failed'),
     );
@@ -246,6 +246,10 @@ export function EmailLinkPage({ lang, kind }: { lang: Lang; kind: 'confirm' | 'u
   if (kind === 'confirm') {
     if (state === 'working') return <Message lang={lang} title={T.confirmWorking} text="" />;
     return state === 'done' ? <Message lang={lang} title={T.confirmedTitle} text={T.confirmedText} /> : <Message lang={lang} title={T.linkFailedTitle} text={T.confirmFailedText} />;
+  }
+  if (kind === 'signin') {
+    if (state === 'working') return <Message lang={lang} title={T.signInWorking} text="" />;
+    return state === 'done' ? <Message lang={lang} title={T.signedInTitle} text={T.signedInText} /> : <Message lang={lang} title={T.linkFailedTitle} text={T.signInFailedText} />;
   }
   if (state === 'done') return <Message lang={lang} title={T.unsubDoneTitle} text={T.unsubDoneText} />;
   if (state === 'failed' || !token) return <Message lang={lang} title={T.linkFailedTitle} text={T.unsubFailedText} />;

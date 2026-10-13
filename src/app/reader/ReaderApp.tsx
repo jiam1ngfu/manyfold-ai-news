@@ -83,13 +83,13 @@ export default function ReaderApp() {
   const T = COPY[lang];
   if (route.name === 'root') return null;
 
-  if (route.name === 'archive' || route.name === 'about' || route.name === 'confirm' || route.name === 'unsubscribe' || route.name === 'notFound') {
+  if (route.name === 'archive' || route.name === 'about' || route.name === 'confirm' || route.name === 'signin' || route.name === 'unsubscribe' || route.name === 'notFound') {
     return (
       <>
         <Masthead lang={lang} route={route} />
         {route.name === 'archive' && <ArchivePage lang={lang} />}
         {route.name === 'about' && <AboutPage lang={lang} />}
-        {(route.name === 'confirm' || route.name === 'unsubscribe') && <EmailLinkPage lang={lang} kind={route.name} />}
+        {(route.name === 'confirm' || route.name === 'signin' || route.name === 'unsubscribe') && <EmailLinkPage lang={lang} kind={route.name} />}
         {route.name === 'notFound' && <Message lang={lang} title={T.notFoundTitle} text={T.notFoundText} />}
       </>
     );

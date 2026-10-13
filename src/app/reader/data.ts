@@ -90,6 +90,16 @@ export const confirmSubscription = (token: string) =>
     if (r.askKey) localStorage.setItem(ASK_KEY, r.askKey);
     markSubscribed(true);
   });
+export const signIn = (token: string) =>
+  request<{ ok: true; askKey: string }>('/api/subscribe/signin', { method: 'POST', body: JSON.stringify({ token }) }).then((r) => {
+    localStorage.setItem(ASK_KEY, r.askKey);
+    markSubscribed(true);
+  });
+/** Forgets the ask key on this device only; the subscription is untouched. */
+export const signOut = (): void => {
+  localStorage.removeItem(ASK_KEY);
+  markSubscribed(false);
+};
 export const unsubscribe = (token: string) =>
   post('/api/unsubscribe', { token }).then(() => {
     localStorage.removeItem(ASK_KEY);
@@ -123,14 +133,22 @@ export async function waitForAnswer(id: string, signal: AbortSignal): Promise<As
   throw new ReaderError(504, 'timeout');
 }
 
-/** Has this browser subscribed? Shared across the done section and the ask sheet. */
-export function useSubscribed(): boolean {
-  const read = useCallback(() => localStorage.getItem(SUBSCRIBED_KEY) === '1', []);
-  const [subscribed, setSubscribed] = useState(read);
+/**
+ * Has this browser subscribed, and does it hold an ask key? Shared across the done
+ * section and the ask sheet. Also follows other tabs, so a sheet left open here turns
+ * into the question box as soon as the emailed link is opened in a new tab.
+ */
+export function useSubscribed(): { subscribed: boolean; hasKey: boolean } {
+  const read = useCallback(() => ({ subscribed: localStorage.getItem(SUBSCRIBED_KEY) === '1', hasKey: Boolean(askKey()) }), []);
+  const [state, setState] = useState(read);
   useEffect(() => {
-    const update = () => setSubscribed(read());
+    const update = () => setState(read());
     window.addEventListener('aiin5:subscribed', update);
-    return () => window.removeEventListener('aiin5:subscribed', update);
+    window.addEventListener('storage', update);
+    return () => {
+      window.removeEventListener('aiin5:subscribed', update);
+      window.removeEventListener('storage', update);
+    };
   }, [read]);
-  return subscribed;
+  return state;
 }

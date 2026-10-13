@@ -217,17 +217,12 @@ ${postalAddress ? p('margin-top:8px;', esc(postalAddress)) : ''}
   return { subject, html, text: lines.join('\n') };
 }
 
-export function renderConfirmEmail(lang: Lang, confirmUrl: string): RenderedEmail {
-  const zh = lang === 'zh';
-  const subject = zh ? '请确认订阅 AI in 5' : 'Confirm your AI in 5 subscription';
-  const intro = zh
-    ? '只差一步：点下面的按钮确认邮箱，之后每天早上 7 点（你的当地时间），你会收到当天的 AI in 5。'
-    : 'One step left: confirm your address and you’ll get AI in 5 every morning at 7:00, your local time.';
-  const button = zh ? '确认订阅' : 'Confirm my subscription';
-  const ignore = zh ? '如果不是你本人订阅的，忽略这封邮件即可，我们不会再给你发邮件。' : 'If you didn’t ask for this, ignore this email and you won’t hear from us again.';
-  const safe = ownUrl(confirmUrl) ?? '';
+/** A short email with one button: the confirmation and the sign-in link share this layout. */
+function renderButtonEmail(lang: Lang, url: string, copy: { subject: string; intro: string; button: string; ignore: string }): RenderedEmail {
+  const { subject, intro, button, ignore } = copy;
+  const safe = ownUrl(url) ?? '';
   const html = `<!doctype html>
-<html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(subject)}</title></head>
+<html lang="${lang === 'zh' ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(subject)}</title></head>
 <body style="margin:0;padding:0;background:${C.stone};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.stone};"><tr><td align="center" style="padding:16px 8px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:${C.paper};"><tr><td style="padding:28px 24px 30px;">
@@ -240,4 +235,29 @@ ${p(`font:13px/1.5 ${SANS};color:${C.graphite};`, esc(ignore))}
 </body></html>`;
   const text = `AI in 5\n\n${intro}\n\n${button}: ${safe}\n\n${ignore}`;
   return { subject, html, text };
+}
+
+export function renderConfirmEmail(lang: Lang, confirmUrl: string): RenderedEmail {
+  const zh = lang === 'zh';
+  return renderButtonEmail(lang, confirmUrl, {
+    subject: zh ? '请确认订阅 AI in 5' : 'Confirm your AI in 5 subscription',
+    intro: zh
+      ? '只差一步：点下面的按钮确认邮箱，之后每天早上 7 点（你的当地时间），你会收到当天的 AI in 5。'
+      : 'One step left: confirm your address and you’ll get AI in 5 every morning at 7:00, your local time.',
+    button: zh ? '确认订阅' : 'Confirm my subscription',
+    ignore: zh ? '如果不是你本人订阅的，忽略这封邮件即可，我们不会再给你发邮件。' : 'If you didn’t ask for this, ignore this email and you won’t hear from us again.',
+  });
+}
+
+/** For a confirmed subscriber asking from a device that has no ask key yet. */
+export function renderSignInEmail(lang: Lang, signInUrl: string, minutes: number): RenderedEmail {
+  const zh = lang === 'zh';
+  return renderButtonEmail(lang, signInUrl, {
+    subject: zh ? '在这台设备上提问：AI in 5 登录链接' : 'Your AI in 5 sign-in link',
+    intro: zh
+      ? `在你想提问的那台设备上点下面的按钮，之后就能在那里就新闻自己提问了。链接 ${minutes} 分钟内有效，不会改动你的订阅。`
+      : `Tap the button on the device where you want to ask your own questions about the news. The link works for ${minutes} minutes and doesn’t change your subscription.`,
+    button: zh ? '在这台设备上提问' : 'Ask on this device',
+    ignore: zh ? '如果不是你本人申请的，忽略这封邮件即可。没有这个链接，别人无法用你的身份提问。' : 'If you didn’t ask for this, ignore this email. Without this link, nobody can ask in your name.',
+  });
 }

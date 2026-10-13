@@ -12,9 +12,9 @@ import type { Issue, Lang } from '../../shared/issue';
 import type { Env } from '../types';
 import { now } from '../db';
 import { safeErrorText } from '../a2a';
-import { ASK_KEY, renderConfirmEmail, renderIssueEmail, UNSUBSCRIBE } from './render';
+import { ASK_KEY, renderConfirmEmail, renderIssueEmail, renderSignInEmail, UNSUBSCRIBE } from './render';
 import { BATCH_SIZE, provider, sendBatch, type Mail } from './send';
-import { askToken, confirmToken, unsubscribeToken } from './tokens';
+import { askToken, confirmToken, signInToken, SIGNIN_MINUTES, unsubscribeToken } from './tokens';
 
 export const SEND_FROM_HOUR = 7;
 export const SEND_UNTIL_HOUR = 12;
@@ -132,7 +132,7 @@ export async function deliverDue(env: Env, at: Date): Promise<DeliveryTick> {
      AND NOT EXISTS (SELECT 1 FROM email_log l WHERE l.email = s.email AND l.kind = 'confirm' AND l.status IN ('sending', 'sent', 'failed'))
      LIMIT ${CONFIRM_BACKLOG_PER_TICK}`,
   ).all<{ email: string; lang: Lang }>();
-  for (const w of waiting.results) await sendConfirmation(env, w.email, w.lang, site);
+  for (const w of waiting.results) await sendLinkEmail(env, 'confirm', w.email, w.lang, site);
 
   const { results } = await env.DB.prepare("SELECT email, lang, timezone FROM subscribers WHERE status = 'confirmed'").all<Subscriber>();
   let budget = MAX_PER_TICK;
@@ -166,36 +166,42 @@ async function digest(value: string): Promise<string> {
   return Array.from(bytes.slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** At most one confirmation per address every 10 minutes, and 3 a day. */
-async function mayConfirm(env: Env, email: string): Promise<boolean> {
+export type LinkKind = 'confirm' | 'signin';
+
+/** At most one link email of a kind per address every 10 minutes, and 3 a day. */
+async function maySend(env: Env, email: string, kind: LinkKind): Promise<boolean> {
   const day = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const recent = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const row = await env.DB.prepare("SELECT COUNT(*) AS n, MAX(created_at) AS last FROM email_log WHERE email = ? AND kind = 'confirm' AND created_at > ?")
-    .bind(email, day)
+  const row = await env.DB.prepare('SELECT COUNT(*) AS n, MAX(created_at) AS last FROM email_log WHERE email = ? AND kind = ? AND created_at > ?')
+    .bind(email, kind, day)
     .first<{ n: number; last: string | null }>();
   return (row?.n ?? 0) < 3 && !(row?.last && row.last > recent);
 }
 
-/** Sends the double opt-in email. Never throws: a failure is logged in email_log only. */
-export async function sendConfirmation(env: Env, email: string, lang: Lang, requestOrigin: string): Promise<void> {
+/**
+ * Sends the double opt-in email, or a confirmed subscriber's sign-in link. Never throws:
+ * a failure is logged in email_log only.
+ */
+export async function sendLinkEmail(env: Env, kind: LinkKind, email: string, lang: Lang, requestOrigin: string): Promise<void> {
   try {
-    if (!(await mayConfirm(env, email))) return;
+    if (!(await maySend(env, email, kind))) return;
     const site = siteUrl(env, requestOrigin);
     const at = now();
     const ref = at;
     if (!site || provider(env) === 'none') {
-      await env.DB.prepare("INSERT OR IGNORE INTO email_log (email, kind, ref, status, error, created_at, updated_at) VALUES (?, 'confirm', ?, 'skipped', ?, ?, ?)")
-        .bind(email, ref, site ? 'No email provider is configured.' : 'SITE_URL is not set.', at, at)
+      await env.DB.prepare("INSERT OR IGNORE INTO email_log (email, kind, ref, status, error, created_at, updated_at) VALUES (?, ?, ?, 'skipped', ?, ?, ?)")
+        .bind(email, kind, ref, site ? 'No email provider is configured.' : 'SITE_URL is not set.', at, at)
         .run();
       return;
     }
-    await env.DB.prepare("INSERT OR IGNORE INTO email_log (email, kind, ref, status, created_at, updated_at) VALUES (?, 'confirm', ?, 'sending', ?, ?)").bind(email, ref, at, at).run();
-    const url = `${site}/${lang}/confirm?t=${encodeURIComponent(await confirmToken(env, email))}`;
-    const rendered = renderConfirmEmail(lang, url);
+    await env.DB.prepare("INSERT OR IGNORE INTO email_log (email, kind, ref, status, created_at, updated_at) VALUES (?, ?, ?, 'sending', ?, ?)").bind(email, kind, ref, at, at).run();
+    const token = kind === 'confirm' ? await confirmToken(env, email) : await signInToken(env, email);
+    const url = `${site}/${lang}/${kind}?t=${encodeURIComponent(token)}`;
+    const rendered = kind === 'confirm' ? renderConfirmEmail(lang, url) : renderSignInEmail(lang, url, SIGNIN_MINUTES);
     const [result] = await sendBatch(env, [{ to: email, ...rendered }]);
-    await settle(env, 'confirm', ref, [result]);
+    await settle(env, kind, ref, [result]);
   } catch (error) {
-    console.error('confirmation email failed', safeErrorText(error instanceof Error ? error.message : error));
+    console.error(`${kind} email failed`, safeErrorText(error instanceof Error ? error.message : error));
   }
 }
 
