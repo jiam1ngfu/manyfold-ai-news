@@ -62,7 +62,7 @@ for (const [lang, card] of Object.entries(CARDS)) {
   console.log(`wrote ${png}`);
 }
 
-// The GitHub preview is its own design, aimed at people looking at the code.
+// The GitHub preview is its own design: the product beside a real story and its checked quote.
 const social = join(root, 'docs/design/brand/github-social-preview.html');
 const preview = join(root, 'docs/design/brand/github-social-preview.png');
 execFileSync(CHROME, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', '--window-size=1280,640', '--virtual-time-budget=8000', `--screenshot=${preview}`, `file://${social}`], { stdio: 'ignore' });
